@@ -127,7 +127,7 @@ Analiza la siguiente consulta utilizando EXCLUSIVAMENTE el contexto de logs prov
     except Exception:
         pass
 
-    # 2. Respaldos estándar
+    # Respaldos 
     candidatos.extend([
         "gemini-2.5-flash",
         "gemini-2.0-flash",
