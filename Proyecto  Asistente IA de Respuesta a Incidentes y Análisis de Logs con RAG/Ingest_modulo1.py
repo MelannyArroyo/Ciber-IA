@@ -6,11 +6,30 @@ from datetime import datetime, timedelta
 #Ruta hacia el archivo de logs 
 ruta_archivo = os.path.join(os.path.dirname(__file__), "..", "archivos_logs", "sample_logs.csv")
 ruta_firewall = os.path.join(os.path.dirname(__file__), "..", "archivos_logs", "pfirewall.log")
+#Se agrega mas formatos de fecha 
+FORMATOS_FECHA = [
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y/%m/%dT%H: %M:%S",
+    "%d/%m/%Y %H:%M:%S",
+
+]
 COLUMNAS = ["ip_address", "Usuario", "Estado"]#Columnas que debe de tener obligatoriamente
 #Cuantos fallos hace a una ip sospechosa 
 VENTANA_SEGUNDOS = 60
 FALLOS_EN_VENTANA = 5
-UMBRAL_FALLOS = 10
+UMBRAL_FALLOS = 5
+
+#se añade un def para que lea la fecha 
+def leer_fecha(texto):
+    texto= (texto or "").strip()
+    for formato in FORMATOS_FECHA:
+        try:
+            return datetime.strptime(texto, formato)
+        except ValueError:
+            continue
+    return None
 
 
 def ingestar_logs(ruta):
@@ -31,11 +50,8 @@ def ingestar_logs(ruta):
                 ip = (fila.get("ip_address") or "").strip()
                 usuario = (fila.get("Usuario")or "").strip()
                 estado = (fila.get("Estado")or "").strip().upper()
-                texto_fecha = (fila.get("Fecha") or "").strip()
-                try:
-                    tiempo = datetime.strptime(texto_fecha, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    tiempo = None
+                tiempo = leer_fecha(fila.get("Fecha"))
+                    
 
                 #si falta algun dato descarta la fila
                 if not ip or not usuario or not estado:
@@ -61,12 +77,14 @@ def detectar_sospechosos(registros, umbral=UMBRAL_FALLOS):
     """Devuelve las IPs con muchos fallos o bloqueos"""
     fallos = Counter(r["ip"] for r in registros if r["estado"] in ("FAIL", "DENY"))
     return {ip: n for ip, n in fallos.items() if n >= umbral}
+
 def hay_rafaga(lista,ventana,minimo):
     lista.sort()
     for i in range(len(lista) - minimo + 1):
         if lista[i + minimo - 1] - lista[i] <= timedelta(seconds=ventana):
             return True
-        return False
+    return False
+
 def detectar_ataques(registros, ventana=VENTANA_SEGUNDOS, minimo=FALLOS_EN_VENTANA):
     tiempos = {} 
     for r in registros:
@@ -80,7 +98,7 @@ def detectar_ataques(registros, ventana=VENTANA_SEGUNDOS, minimo=FALLOS_EN_VENTA
             resultado[ip] = "ATAQUE AUTOMATIZADO"
         else:
             resultado[ip] =  "Error humano aislado"
-            return resultado
+    return resultado
 
         
 
@@ -98,10 +116,7 @@ def interpretar_linea(linea):
         estado= "DENY"
     else:
         return None
-    try:
-        tiempo = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        tiempo = None
+    tiempo = leer_fecha(f"{fecha} {hora}")
 
     
     return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo}
@@ -124,10 +139,58 @@ def ingestar_firewall(ruta):
     print(f"Eventos del firewall: {len(registros)}")
     return registros
 
+ #Carcteristicas nuevas 
+def calcular_estadisticas(registros):
+    sospechosos = detectar_sospechosos(registros)
+    top= dict(sorted(sospechosos.items(), key=lambda x: x[1], reverse=True) [:10])
+    ataques = [ip for ip, tipo in detectar_ataques(registros).items()
+            if tipo == "ATAQUE AUTOMATIZADO"]
+    return {
+        "total": len(registros),
+        "por_estado": resumen_por_estado(registros),
+        "sospechosos": top,
+        "ataques": ataques,  
+        
+    }
+
+def generar_resumen(registros):
+    est = calcular_estadisticas(registros)
+    lineas = [ 
+        f"Total de eventos analizados: {est['total']}" ,
+        f"Eventos por estado: {est['por_estado']}"
+    ]
+    if est["sospechosos"]:
+        lineas.append("IP sospechosas (con mas fallos):")
+        for ip, n in est["sospechosos"].items():
+            lineas.append(f"- {ip}: {n} fallos")
+    else:
+            lineas.append("No hay IPs sospechosas. ")
+
+    if est["ataques"]:
+        lineas.append("IPs con ataque automatizado " + " ," .join(est["ataques"]))
+    else:
+        lineas.append("No se detectaron ataques automatizados. ")
+    return "\n".join(lineas)
+
+def a_esquema_rag(registro):
+    """Convierte un registro del modulo 1 al formato que espera el modulo 2"""
+    tiempo = registro["tiempo"]
+    return { 
+        "timestamp": tiempo.isoformat() if tiempo else "N/A",
+        "event": f"Acceso{registro['estado']}",
+        "src_ip": registro["ip"],
+        "dts_ip": "N/A",
+        "user": registro["usuario"],
+        "status": registro["estado"],
+    }
+        
+ 
+
 #Solo va a correr si ejecuta este archivo directamente
 if __name__ == "__main__":
     print("=" * 50)
     print("  INGESTA DE LOGS - MODULO 1")
+  
 
     logs_csv = ingestar_logs(ruta_archivo)
     logs_fw = ingestar_firewall(ruta_firewall)
@@ -141,8 +204,11 @@ if __name__ == "__main__":
     print("\n--- Eventos del firewall ---") 
     for numero, r in enumerate(logs_csv, start=1):
         print(f"Evento {numero}: IP={r['ip']}, Usuario={r['usuario']}, Estado={r['estado']}")
+        print(leer_fecha("2026-10-06T10:15:30Z"), leer_fecha("08/10/2026 9:06:00"), leer_fecha("basura"))
+    print("\n---RESUMEN PARA LA IA---")
+    print(generar_resumen(datos))
     
-    
+
 
     #resumen por estado
     print("Resumen por estado:" , resumen_por_estado(datos))
@@ -150,16 +216,29 @@ if __name__ == "__main__":
     #IPs sospechosas
     sospechosos= detectar_sospechosos(datos)
    
-
     if sospechosos:
         print("\nIPs sospechosas: ")
         for ip, cantidad in sospechosos.items():
             print(f"   - {ip}: {cantidad}  intentos fallidos")
     else:
         print("\n No se detectaron IPs sospechosas. ")
-        print(detectar_ataques(datos))
+
     
     print("\nAnalisis por ventana de tiempo:    ")
     for ip, tipo in detectar_ataques(datos).items():
         print(f"  -{ip}: {tipo}")
     print(f"\n    INGESTA FINALIZADA CON EXITO: {len(datos)}  registros procesados   ")
+    datos_rag = [a_esquema_rag(r) for r in datos]
+    print("\n---Ejemplo de registro de formato RAG---")
+    print(datos_rag[0])
+
+   
+
+    
+    
+                
+
+
+             
+
+

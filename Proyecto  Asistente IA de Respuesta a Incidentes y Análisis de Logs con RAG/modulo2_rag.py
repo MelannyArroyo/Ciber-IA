@@ -115,7 +115,7 @@ Analiza la siguiente consulta utilizando EXCLUSIVAMENTE el contexto de logs prov
 
     # Modelos estándar de texto priorizados (sin prefijos)
     candidatos = [
-        "gemini-2.5-flash",
+       "gemini-5.5-flash",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
         "gemini-2.5-pro"
@@ -175,3 +175,5 @@ if __name__ == "__main__":
 
     print("--- RESPUESTA DE GEMINI ---")
     print(resultado)
+
+
