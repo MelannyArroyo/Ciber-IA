@@ -1,6 +1,15 @@
 import streamlit as st
 # importar funcion de analisis
 from modulo2_rag import analizar_incidentes_con_gemini
+from Ingest_modulo1 import (
+    ingestar_logs,
+    ingestar_firewall,
+    calcular_estadisticas,
+    ruta_archivo,
+    ruta_firewall,
+    
+)
+from backend_logs import generar_informe_pdf
 
 # pagina web
 st.set_page_config(
@@ -21,6 +30,70 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("Colmena Technologies\nPráctica Profesional Ciberseguridad e IA")
 
+datos = ingestar_logs(ruta_archivo) + ingestar_firewall(ruta_firewall)
+resumen = calcular_estadisticas(datos)
+
+st.subheader("Resumen de Eventos")
+
+st.metric("Total de eventos analizados", resumen["total"])
+st.subheader("IP sospechosas")
+if resumen["sospechosos"]:
+    st.dataframe(
+        [{"IP": ip, "Fallos": n } for ip,n in resumen["sospechosos"].items()],
+        use_container_width=True
+    )
+else:
+    st.success("No hay IPs sospechosas. ")
+
+st.subheader("Ataques Automatizados")
+if resumen["ataques"]:
+    for ip in resumen["ataques"]:
+
+        st.error(f"Ataque automatizado detectado desde {ip}")
+else:
+    st.success("No se detectaron ataques automatizados. ")
+
+#Escaneos de puertos
+st.subheader("Posibles escaneos de puertos")
+if resumen["escaneos"]:
+    for ip in resumen["escaneos"]:
+        st.warning(f"Posible escaneo de puertos desde{ip}")
+else:
+    st.success("No se detectaron escaneos de puertos.")
+
+
+st.subheader("Informe") 
+texto = (
+    f"Total de eventos: {resumen['total']}\n"
+    f"IPs sospechosas: {resumen['sospechosos']}\n"
+    f"Ataques automatizados: {resumen['ataques']}\n"
+    f"Posibles escaneos de puertos: {resumen['escaneos']}\n"
+
+    )
+
+st.subheader("Eventos")# Ver los eventos individuales del log
+ip_filtro = st.text_input("Filtrar por IP")
+estados = st.multiselect("Estado", ["OK","FAIL","DENY"], default=["OK","FAIL", "DENY"])
+filas = [
+    {"IP":r["usuario"], "Estado": r["estado"], "Fecha": r["tiempo"]}
+    for r in datos
+    if r["estado"] in estados and (not ip_filtro or ip_filtro in r["ip"])
+]
+
+st.dataframe(filas)
+st.caption(f"Mostrando {len(filas)} eventos")
+#Descargar informe en docmento pdf
+st.download_button(
+    "Descargar informe (PDF)",
+    data=generar_informe_pdf(resumen),
+    file_name="informe_logs.pdf",
+    mime="application/pdf",
+)
+
+st.divider()    
+
+
+        
 # Inicializar historial de conversación si no existe
 if "messages" not in st.session_state:
     st.session_state.messages = [

@@ -3,6 +3,7 @@ import os
 from collections import Counter #Para poder Contar OK,FAIL,DENY y fallos por ip
 from datetime import datetime, timedelta
 
+
 #Ruta hacia el archivo de logs 
 ruta_archivo = os.path.join(os.path.dirname(__file__), "..", "archivos_logs", "sample_logs.csv")
 ruta_firewall = os.path.join(os.path.dirname(__file__), "..", "archivos_logs", "pfirewall.log")
@@ -11,7 +12,7 @@ FORMATOS_FECHA = [
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%dT%H:%M:%S",
     "%Y-%m-%dT%H:%M:%SZ",
-    "%Y/%m/%dT%H: %M:%S",
+    "%Y/%m/%dT%H:%M:%S",
     "%d/%m/%Y %H:%M:%S",
 
 ]
@@ -20,6 +21,7 @@ COLUMNAS = ["ip_address", "Usuario", "Estado"]#Columnas que debe de tener obliga
 VENTANA_SEGUNDOS = 60
 FALLOS_EN_VENTANA = 5
 UMBRAL_FALLOS = 5
+PUERTOS_EN_VENTANA = 10
 
 #se añade un def para que lea la fecha 
 def leer_fecha(texto):
@@ -107,6 +109,7 @@ def interpretar_linea(linea):
     if len(partes) < 5:
         return None
     fecha,hora,accion,protocolo, ip = partes [:5]
+    puerto = partes[7] if len(partes) > 7 and partes[7].isdigit() else None 
     if ip in ("127.0.0.1", "::1"):
         return None
 
@@ -119,7 +122,7 @@ def interpretar_linea(linea):
     tiempo = leer_fecha(f"{fecha} {hora}")
 
     
-    return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo}
+    return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo, "puerto":puerto}
 
 def ingestar_firewall(ruta):
     registros = []
@@ -139,6 +142,23 @@ def ingestar_firewall(ruta):
     print(f"Eventos del firewall: {len(registros)}")
     return registros
 
+#Funcion para detectar escaneos en puertos
+def detectar_escaneos(registros, umbral=PUERTOS_EN_VENTANA, ventana=VENTANA_SEGUNDOS):
+    """Va a marcar IPs que bloqueadas tocan muchos puertos dsitintos en poco tiempo"""
+    eventos = {}
+    for r in registros:
+        if r.get("puerto") and r["tiempo"] and r["estado"] == "DENY":
+            eventos.setdefault(r["ip"], []).append((r["tiempo"], r["puerto"]))
+    escaneos= []
+    for ip, lista in eventos.items():
+        lista.sort()
+        for inicio, _ in lista:
+            puertos = {p for t,p in lista if inicio <= t <= inicio + timedelta(seconds = ventana)}
+            if len(puertos)>=umbral:
+                escaneos.append(ip)
+    return escaneos 
+     
+
  #Carcteristicas nuevas 
 def calcular_estadisticas(registros):
     sospechosos = detectar_sospechosos(registros)
@@ -149,7 +169,8 @@ def calcular_estadisticas(registros):
         "total": len(registros),
         "por_estado": resumen_por_estado(registros),
         "sospechosos": top,
-        "ataques": ataques,  
+        "ataques": ataques, 
+        "escaneos" : detectar_escaneos(registros), #Incluye el resultado en las estadisticas 
         
     }
 

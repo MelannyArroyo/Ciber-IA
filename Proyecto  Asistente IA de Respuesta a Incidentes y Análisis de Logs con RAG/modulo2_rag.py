@@ -3,6 +3,8 @@ import chromadb
 from chromadb.utils import embedding_functions
 from google import genai
 from dotenv import load_dotenv
+from Ingest_modulo1 import ingestar_logs, ingestar_firewall, a_esquema_rag, ruta_archivo, ruta_firewall
+import re
 
 # 1. Cargar variables de entorno desde .env
 load_dotenv()
@@ -74,17 +76,23 @@ def agregar_logs_a_vectorstore(lista_de_logs: list[dict]) -> int:
     return len(lista_de_logs)
 
 
-def buscar_logs_relevantes(pregunta_usuario: str, top_k: int = 5) -> list[str]:
-    """Recupera los logs con mayor similitud vectorial desde ChromaDB."""
+def buscar_logs_relevantes(pregunta_usuario: str, top_k: int = 5) -> list[str]: 
+    """Primero busca los logs de las IPs mencionadas y luego completa similitud vectorial."""
+    docs_ip = []
+    for ip in re.findall(r"\d{1,3}(?:\.\d{1,3}){3}", pregunta_usuario):
+   
+        encontrados = collection.get(where={"src_ip": ip}, limit=20)
+        docs_ip.extend(encontrados.get("documents", []))
+        
     vector_pregunta = obtener_embedding(pregunta_usuario)
-
     resultados = collection.query(
-        query_embeddings=[vector_pregunta],
-        n_results=top_k
+        query_embeddings=[vector_pregunta], 
+        n_results=top_k 
     )
+    docs_similares = resultados.get("documents",[[]])[0]
+    return list(dict.fromkeys(docs_ip + docs_similares))
 
-    documents = resultados.get("documents", [[]])
-    return documents[0] if documents else []
+    
 
 
 def analizar_incidentes_con_gemini(pregunta_usuario: str) -> str:
@@ -156,24 +164,12 @@ Analiza la siguiente consulta utilizando EXCLUSIVAMENTE el contexto de logs prov
 
 # --- BLOQUE DE EJECUCIÓN DIRECTA ---
 if __name__ == "__main__":
-    print("\n Iniciando prueba e ingesta de datos en modulo2_rag.py...", flush=True)
+    logs_csv = ingestar_logs(ruta_archivo)
+    logs_fw = ingestar_firewall(ruta_firewall)
+    logs_rag = [a_esquema_rag(r) for r in logs_csv + logs_fw]
 
-    logs_prueba = [
-        {"timestamp": "2026-10-06T10:15:30Z", "event": "SSH Failed Password", "src_ip": "192.168.1.50", "dst_ip": "10.0.0.5", "user": "root", "status": "Failed"},
-        {"timestamp": "2026-10-06T10:15:32Z", "event": "SSH Failed Password", "src_ip": "192.168.1.50", "dst_ip": "10.0.0.5", "user": "root", "status": "Failed"},
-        {"timestamp": "2026-10-06T10:15:35Z", "event": "SSH Successful Login", "src_ip": "192.168.1.50", "dst_ip": "10.0.0.5", "user": "root", "status": "Success"},
-        {"timestamp": "2026-10-06T11:00:10Z", "event": "HTTP GET /admin", "src_ip": "203.0.113.195", "dst_ip": "10.0.0.10", "user": "anonymous", "status": "403 Forbidden"}
-    ]
+    total = agregar_logs_a_vectorstore(logs_rag)
+    print(f"Se guardaron {[total]} eventos en ChromaDB")
 
-    print("1. Guardando logs de prueba en ChromaDB...", flush=True)
-    total = agregar_logs_a_vectorstore(logs_prueba)
-    print(f" Se registraron {total} eventos de prueba exitosamente.\n", flush=True)
-
-    print("2. Iniciando consulta RAG con Gemini...", flush=True)
-    consulta = "¿Qué ocurrió con la IP 192.168.1.50 y qué nivel de riesgo representa?"
-    resultado = analizar_incidentes_con_gemini(consulta)
-
-    print("--- RESPUESTA DE GEMINI ---")
+    resultado = analizar_incidentes_con_gemini("¿Que ocurrio con la IP 192.168.1.50")
     print(resultado)
-
-
