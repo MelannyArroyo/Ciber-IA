@@ -1,2 +1,6 @@
 streamlit
 chromadb
+google-genai
+python-dotenv
+fpdf2
+bcrypt

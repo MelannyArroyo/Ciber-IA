@@ -9,7 +9,7 @@ from Ingest_modulo1 import (
     ruta_firewall,
     
 )
-from backend_logs import generar_informe_pdf
+from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
 
 # pagina web
 st.set_page_config(
@@ -53,6 +53,16 @@ if resumen["ataques"]:
 else:
     st.success("No se detectaron ataques automatizados. ")
 
+#Correlaciones 
+st.subheader("Correlacion de eventos")
+if resumen ["correlaciones"]:
+    for ip in resumen["correlaciones"]:
+
+        st.error(f"Fallos seguidos de un acceso exitoso desde {ip}. Revisar si la cuenta fue comprometida")
+else:
+    st.success("No se encontraron correlaciones entre fallos y accesos exitosos")
+
+
 #Escaneos de puertos
 st.subheader("Posibles escaneos de puertos")
 if resumen["escaneos"]:
@@ -74,11 +84,8 @@ texto = (
 st.subheader("Eventos")# Ver los eventos individuales del log
 ip_filtro = st.text_input("Filtrar por IP")
 estados = st.multiselect("Estado", ["OK","FAIL","DENY"], default=["OK","FAIL", "DENY"])
-filas = [
-    {"IP":r["usuario"], "Estado": r["estado"], "Fecha": r["tiempo"]}
-    for r in datos
-    if r["estado"] in estados and (not ip_filtro or ip_filtro in r["ip"])
-]
+filas =  filtrar_eventos(datos, ip_filtro, estados)
+
 
 st.dataframe(filas)
 st.caption(f"Mostrando {len(filas)} eventos")
@@ -88,6 +95,8 @@ st.download_button(
     data=generar_informe_pdf(resumen),
     file_name="informe_logs.pdf",
     mime="application/pdf",
+    on_click=registrar_informe,
+    args=(resumen,),
 )
 
 st.divider()    

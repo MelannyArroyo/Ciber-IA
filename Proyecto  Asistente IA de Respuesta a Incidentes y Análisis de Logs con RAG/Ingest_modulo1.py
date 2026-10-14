@@ -2,6 +2,8 @@ import csv
 import os
 from collections import Counter #Para poder Contar OK,FAIL,DENY y fallos por ip
 from datetime import datetime, timedelta
+import statistics
+from db import crear_tablas,guardar_eventos,guardar_alerta_unica
 
 
 #Ruta hacia el archivo de logs 
@@ -156,10 +158,71 @@ def detectar_escaneos(registros, umbral=PUERTOS_EN_VENTANA, ventana=VENTANA_SEGU
             puertos = {p for t,p in lista if inicio <= t <= inicio + timedelta(seconds = ventana)}
             if len(puertos)>=umbral:
                 escaneos.append(ip)
+                break
     return escaneos 
-     
 
- #Carcteristicas nuevas 
+#Correlacion de eventos 
+def correlacionar(registros,venntana_segundos=600):
+    """Va a marcar IPs con fallos seguidos de un acceso OK dentro de la ventana de tiempo"""
+    eventos = {}
+    #Agrupa los eventos por IP, descarta los que no tiene fecha
+    for r in registros:
+            if r["tiempo"] is not None:
+                eventos.setdefault(r["ip"], []).append((r["tiempo"], r["estado"]))
+    alertas = set()
+    #Ordena cada IP por tiempo y busca cada fallo
+    for ip, lista in eventos.items():
+        lista.sort()
+        for i, (t_fallo, estado) in enumerate(lista):
+            if estado not in ("FAIL", "DENY"):
+                continue
+            # ve los eventos siguientes hasta que se acaba la ventana de 10min, si aparece OK la IP entra a la lista
+            for t_ok, estado_ok in lista[i +1:]:
+                if (t_ok - t_fallo).total_seconds() > venntana_segundos:
+                    break
+                if estado_ok == "OK":
+                    alertas.add(ip)
+                    break
+                if ip in alertas:
+                    break
+    return sorted(alertas)
+
+#Calcula cuantas cuentas distintas intento usar 
+def usuarios_atacados(registros, ips):
+    """Funciona para cada IP sospechosa, devuelve (usuario mas atacado, intentos, cuentas distintas)."""
+
+    intentos = {}
+    #Cuenta cuantas veces cada IP fallo con cada usuario
+    for r in registros:
+        if r["ip"] in ips and r["estado"] in ("FAIL", "DENY"):
+            cuentas = intentos.setdefault(r["ip"], {})
+            cuentas[r["usuario"]] = cuentas.get(r["usuario"], 0) + 1
+
+    resultado = {}
+    #Cada IP toma la cuenta con mas intentos y cuenta cuantas cuentas distintas probo
+    for ip, cuentas in intentos.items():
+        usuario, n = max(cuentas.items(), key=lambda x: x[1])
+        resultado[ip] = (usuario, n, len(cuentas))
+    return resultado
+
+#Contar eventos de cada hora y marcar las que salen mucho del promedio
+def detectar_anomalias_horarias(registros, factor=1.5):
+    """Va a marcar las horas con mas eventos de lo normal"""
+    conteo = {}
+    #Agrupa eventos por hora, quitando los minutos y segundos
+    for r in registros:
+        if r["tiempo"] is not None:
+            hora = r["tiempo"].replace(minute=0, second=0, microsecond=0)
+            conteo[hora] = conteo.get(hora, 0) + 1
+
+    if len(conteo) < 2:
+        return []
+ #Calcula la media y desviacion de los conteos
+    valores = list(conteo.values())
+    limite = statistics.mean(valores) + factor * statistics.pstdev(valores)
+    #Decuelve las horas si el conteo supera el limite, ordenadas por fecha
+    return sorted((hora, n) for hora, n in conteo.items() if n > limite)
+
 def calcular_estadisticas(registros):
     sospechosos = detectar_sospechosos(registros)
     top= dict(sorted(sospechosos.items(), key=lambda x: x[1], reverse=True) [:10])
@@ -170,7 +233,10 @@ def calcular_estadisticas(registros):
         "por_estado": resumen_por_estado(registros),
         "sospechosos": top,
         "ataques": ataques, 
-        "escaneos" : detectar_escaneos(registros), #Incluye el resultado en las estadisticas 
+        "escaneos" : detectar_escaneos(registros),  #Incluye el resultado en las estadisticas 
+        "correlaciones" : correlacionar(registros),
+        "usuarios" : usuarios_atacados(registros, list(top)),
+        "anomalias" : detectar_anomalias_horarias(registros),
         
     }
 
@@ -200,19 +266,31 @@ def a_esquema_rag(registro):
         "timestamp": tiempo.isoformat() if tiempo else "N/A",
         "event": f"Acceso{registro['estado']}",
         "src_ip": registro["ip"],
-        "dts_ip": "N/A",
+        "dst_ip": "N/A",
         "user": registro["usuario"],
         "status": registro["estado"],
     }
-        
+def _texto(t):
+    return t.strftime("%Y-%m-%d %H:M:%S") if t else None 
+
+def guardar_en_db(logs_csv, logs_fw):
+    crear_tablas()
+    filas = [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "csv") for r in logs_csv]
+    filas +=  [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "firewall") for r in logs_fw]
+    nuevos = guardar_eventos(filas)
+
+    est = calcular_estadisticas(logs_csv + logs_fw)
+    for ip in est["ataques"]:
+        guardar_alerta_unica("ATAQUE_AUTOMATIZADO", ip, "Rafaga de fallos en poco tiempo")
+    for ip in set(est["escaneos"]):
+        guardar_alerta_unica("ESCANEO_PUERTOS", ip, "Muchos puertos bloqueados en la ventana")
+    for ip in est["correlaciones"]:
+        guardar_alerta_unica("POSIBLE_COMPROMISO",ip, "Fallos seguidos de acceso OK")
+    return nuevos
  
 
 #Solo va a correr si ejecuta este archivo directamente
 if __name__ == "__main__":
-    print("=" * 50)
-    print("  INGESTA DE LOGS - MODULO 1")
-  
-
     logs_csv = ingestar_logs(ruta_archivo)
     logs_fw = ingestar_firewall(ruta_firewall)
     datos = logs_csv + logs_fw 
