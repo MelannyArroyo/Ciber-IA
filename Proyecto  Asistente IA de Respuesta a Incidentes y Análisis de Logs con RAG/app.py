@@ -5,12 +5,14 @@ from Ingest_modulo1 import (
     ingestar_logs,
     ingestar_firewall,
     calcular_estadisticas,
+    guardar_en_db,
     ruta_archivo,
     ruta_firewall,
     
 )
 from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
-
+from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
+from db import crear_tablas
 # pagina web
 st.set_page_config(
     page_title="Colmena Technologies",
@@ -18,21 +20,73 @@ st.set_page_config(
     layout="centered"
 )
 
+#Ventana de incio de sesion 
+crear_tablas ()
+if "rol" not in st.session_state:
+    st.session_state.rol = None
+#Inicio de sesion
+if st.session_state.rol is None:
+    st.title("Iniciar sesion")
+    with st.form("login"):
+        usuario = st.text_input("Usuario")
+        contrasena = st.text_input("Contraseña", type="password")
+        entrar = st.form_submit_button("Entrar")
+
+    if entrar:
+        rol = verificar_usuario(usuario, contrasena)
+        if rol:
+            st.session_state.rol = rol
+            st.session_state.usuario = usuario
+        else:
+            st.error("Usuario o contraseña Incorrectos")
+    st.stop()
+
+    #Administrar usuarios
+if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
+    with st.sidebar.expander("Administrar usarios"):
+        with st.form("nuevo_usuario", clear_on_submit=True):
+            nuevo = st.text_input("Nuevo usuario")
+            clave = st.text_input("Contraseña", type="password")
+            rol_nuevo = st.selectbox("Rol", ["analista", "administrador"])
+            crear = st.form_submit_button("Crear usuario")
+        if crear:
+            ok, mensaje = registrar_usuario(nuevo, clave, rol_nuevo)
+            if ok:
+                st.success(mensaje)
+            else:
+                st.error(mensaje)
+        st.dataframe(listar_usuarios(), use_container_width=True)
+                                   
+
 # Encabezados
 st.title("Asistente IA de respuesta a incidentes")
 st.caption("Plataforma de Análisis de logs y detección de amenazas asistida por RAG y Gemini API")
 
 # Barra lateral
 with st.sidebar:
+    st.write(f"Sesion: {st.session_state.usuario}  ({st.session_state.rol})")
+    if st.button("Cerrar sesion"):
+        st.session_state.clear()
+        st.rerun()
     st.header("Estado del sistema")
     st.success("Motor RAG (ChromaDB): Activo")
     st.info("Modelo LLM: Gemini")
     st.markdown("---")
     st.markdown("Colmena Technologies\nPráctica Profesional Ciberseguridad e IA")
 
-datos = ingestar_logs(ruta_archivo) + ingestar_firewall(ruta_firewall)
+logs_cvs = ingestar_logs(ruta_archivo)
+logs_fw  = ingestar_firewall(ruta_firewall)
+datos = logs_cvs + logs_fw
 resumen = calcular_estadisticas(datos)
 
+#Va a evitar que Streamlit guarde los eventos repetidamente
+#en cada interaccion
+#usando st.session_state como memoria temporal
+# para optimizar el rendimiento
+if "eventos_guardados" not in st.session_state:
+    guardar_en_db(logs_cvs, logs_fw)
+    st.session_state.eventos_guardados = True
+    
 st.subheader("Resumen de Eventos")
 
 st.metric("Total de eventos analizados", resumen["total"])

@@ -4,12 +4,15 @@ from collections import Counter #Para poder Contar OK,FAIL,DENY y fallos por ip
 from datetime import datetime, timedelta
 import statistics
 from db import crear_tablas,guardar_eventos,guardar_alerta_unica
+import ipaddress
 
 
 #Ruta hacia el archivo de logs 
-ruta_archivo = os.path.join(os.path.dirname(__file__), "..", "archivos_logs", "sample_logs.csv")
+#Indican donde estan las fuentes reales inicios de sesion y firewall
+ruta_archivo = os.path.join(os.path.dirname(__file__), "..", "archivos_logs", "eventos_windows.csv") #Indican donde estan las fuentes reales
 ruta_firewall = os.path.join(os.path.dirname(__file__), "..", "archivos_logs", "pfirewall.log")
 #Se agrega mas formatos de fecha 
+#Para que el programa pueda leer varios formatos
 FORMATOS_FECHA = [
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%dT%H:%M:%S",
@@ -20,12 +23,15 @@ FORMATOS_FECHA = [
 ]
 COLUMNAS = ["ip_address", "Usuario", "Estado"]#Columnas que debe de tener obligatoriamente
 #Cuantos fallos hace a una ip sospechosa 
-VENTANA_SEGUNDOS = 60
+# sirve para ajustar la sensibilidad de las detecciones
+# Y para que no se toque la logica del codigo si se desea cambiar 
+VENTANA_SEGUNDOS = 60 
 FALLOS_EN_VENTANA = 5
-UMBRAL_FALLOS = 5
+UMBRAL_FALLOS = 5 
 PUERTOS_EN_VENTANA = 10
 
 #se añade un def para que lea la fecha 
+# se agrega el none para que el programa no se detenga por alguna fecha de una fila
 def leer_fecha(texto):
     texto= (texto or "").strip()
     for formato in FORMATOS_FECHA:
@@ -42,7 +48,9 @@ def ingestar_logs(ruta):
     descartadas = 0
 
     try: 
-        with open(ruta, mode='r', encoding='utf-8') as archivo:
+        # carga segura de csv valida la estructura 
+        #descarta filas incompletas y atrapa errores de archivo 
+        with open(ruta, mode='r', encoding='utf-8-sig') as archivo: 
             lector = csv.DictReader(archivo)
             #Revisa que existan todas las columnas 
             faltan = [c for c in COLUMNAS if c not in (lector.fieldnames or [])]
@@ -77,18 +85,21 @@ def ingestar_logs(ruta):
 def resumen_por_estado(registros):
     """Cuenta cuantos eventos hay de cada estado (OK,FAIL,DENY)."""
     return dict(Counter(r["estado"] for r in registros))
+
+#Detecta por volumen sin importar cuando
 def detectar_sospechosos(registros, umbral=UMBRAL_FALLOS):
     """Devuelve las IPs con muchos fallos o bloqueos"""
     fallos = Counter(r["ip"] for r in registros if r["estado"] in ("FAIL", "DENY"))
     return {ip: n for ip, n in fallos.items() if n >= umbral}
 
+# Deteccion por velocidad diferencia entre un humano y un bot
 def hay_rafaga(lista,ventana,minimo):
     lista.sort()
     for i in range(len(lista) - minimo + 1):
         if lista[i + minimo - 1] - lista[i] <= timedelta(seconds=ventana):
             return True
     return False
-
+#Detecta y clafsifica rafagas masivas de intentos por fuerza bruta
 def detectar_ataques(registros, ventana=VENTANA_SEGUNDOS, minimo=FALLOS_EN_VENTANA):
     tiempos = {} 
     for r in registros:
@@ -104,15 +115,32 @@ def detectar_ataques(registros, ventana=VENTANA_SEGUNDOS, minimo=FALLOS_EN_VENTA
             resultado[ip] =  "Error humano aislado"
     return resultado
 
-        
-
+#descarta el trafiico normal de la red local que no es un ataque
+def es_trafico_de_ruido(ip_origen, ip_destino):
+    "True si es trafico normal de la red local que no sirve para detectar ataques"
+    try:
+        origen = ipaddress.ip_address(ip_origen)  
+        destino = ipaddress.ip_address(ip_destino)
+    except ValueError:
+        return True
+    if origen.is_unspecified or origen.is_link_local or origen.is_loopback:
+        return True
+    if destino.is_multicast or destino.is_link_local:
+        return True
+    if destino.version == 4 and ip_destino.endswith(".255"):
+        return True
+    return False
+    
+#convierte una linea de pfirewall.log en un registro
+#Traduce ALLOW a OK Y DROP a DENY para usar los mismos estados de inicio de sesion
 def interpretar_linea(linea):
     partes = linea.split()
     if len(partes) < 5:
         return None
     fecha,hora,accion,protocolo, ip = partes [:5]
     puerto = partes[7] if len(partes) > 7 and partes[7].isdigit() else None 
-    if ip in ("127.0.0.1", "::1"):
+    ip_destino = partes[5] if len(partes) > 5 else ""
+    if es_trafico_de_ruido(ip, ip_destino):
         return None
 
     if accion == "ALLOW":
@@ -126,6 +154,9 @@ def interpretar_linea(linea):
     
     return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo, "puerto":puerto}
 
+#salta las lineas del encabezado del log
+#lee pfirewall.log linea por linea
+#convierte cada linea en un registro
 def ingestar_firewall(ruta):
     registros = []
     try:
@@ -162,7 +193,10 @@ def detectar_escaneos(registros, umbral=PUERTOS_EN_VENTANA, ventana=VENTANA_SEGU
     return escaneos 
 
 #Correlacion de eventos 
-def correlacionar(registros,venntana_segundos=600):
+# Une eventos dispersos 
+#Un error aislado es inofensivo y un exito tambien
+#Pero muchos fallos seguidos  de un acceso correcto
+def correlacionar(registros,ventana_segundos=600):
     """Va a marcar IPs con fallos seguidos de un acceso OK dentro de la ventana de tiempo"""
     eventos = {}
     #Agrupa los eventos por IP, descarta los que no tiene fecha
@@ -178,7 +212,7 @@ def correlacionar(registros,venntana_segundos=600):
                 continue
             # ve los eventos siguientes hasta que se acaba la ventana de 10min, si aparece OK la IP entra a la lista
             for t_ok, estado_ok in lista[i +1:]:
-                if (t_ok - t_fallo).total_seconds() > venntana_segundos:
+                if (t_ok - t_fallo).total_seconds() > ventana_segundos:
                     break
                 if estado_ok == "OK":
                     alertas.add(ip)
@@ -188,6 +222,7 @@ def correlacionar(registros,venntana_segundos=600):
     return sorted(alertas)
 
 #Calcula cuantas cuentas distintas intento usar 
+#Identifica la gravedad de alerta segun la cuenta afectada
 def usuarios_atacados(registros, ips):
     """Funciona para cada IP sospechosa, devuelve (usuario mas atacado, intentos, cuentas distintas)."""
 
@@ -223,22 +258,29 @@ def detectar_anomalias_horarias(registros, factor=1.5):
     #Decuelve las horas si el conteo supera el limite, ordenadas por fecha
     return sorted((hora, n) for hora, n in conteo.items() if n > limite)
 
+# separa las fuentes
+#los inicios de sesion cuentan como fuerza bruta y correlaciones
+# el firewall cuenta como escaneos
 def calcular_estadisticas(registros):
-    sospechosos = detectar_sospechosos(registros)
-    top= dict(sorted(sospechosos.items(), key=lambda x: x[1], reverse=True) [:10])
-    ataques = [ip for ip, tipo in detectar_ataques(registros).items()
-            if tipo == "ATAQUE AUTOMATIZADO"]
+    logins = [r for r in registros if r ["usuario"] != "firewall"]
+    firewall = [r for r in registros if r["usuario"] == "firewall"]
+
+    sospechosos = detectar_sospechosos(logins)
+    top = dict(sorted(sospechosos.items(), key=lambda x: x[1], reverse=True)[:10])
+    ataques = [ip for ip, tipo in detectar_ataques(logins).items()
+               if tipo == "ATAQUE AUTOMATIZADO"]
+
     return {
         "total": len(registros),
         "por_estado": resumen_por_estado(registros),
         "sospechosos": top,
-        "ataques": ataques, 
-        "escaneos" : detectar_escaneos(registros),  #Incluye el resultado en las estadisticas 
-        "correlaciones" : correlacionar(registros),
-        "usuarios" : usuarios_atacados(registros, list(top)),
-        "anomalias" : detectar_anomalias_horarias(registros),
-        
-    }
+        "ataques": ataques,
+        "escaneos": detectar_escaneos(firewall),
+        "correlaciones": correlacionar(logins),
+        "usuarios": usuarios_atacados(logins, list(top)),
+        "anomalias": detectar_anomalias_horarias(registros)
+
+    }  
 
 def generar_resumen(registros):
     est = calcular_estadisticas(registros)
@@ -254,29 +296,34 @@ def generar_resumen(registros):
             lineas.append("No hay IPs sospechosas. ")
 
     if est["ataques"]:
-        lineas.append("IPs con ataque automatizado " + " ," .join(est["ataques"]))
+        lineas.append("IPs con ataque automatizado " + ", " .join(est["ataques"]))
     else:
         lineas.append("No se detectaron ataques automatizados. ")
     return "\n".join(lineas)
-
+#Traduce los nombres del moudulo 1
+# A lo que espera el modulo 2
+# para conectar los dos modulos sin reescribir ninguno
 def a_esquema_rag(registro):
     """Convierte un registro del modulo 1 al formato que espera el modulo 2"""
     tiempo = registro["tiempo"]
     return { 
         "timestamp": tiempo.isoformat() if tiempo else "N/A",
-        "event": f"Acceso{registro['estado']}",
+        "event": f"Acceso {registro['estado']}",
         "src_ip": registro["ip"],
         "dst_ip": "N/A",
         "user": registro["usuario"],
         "status": registro["estado"],
     }
 def _texto(t):
-    return t.strftime("%Y-%m-%d %H:M:%S") if t else None 
+    return t.strftime("%Y-%m-%d %H:%M:%S") if t else None 
 
+#guarda los eventos y crea alertas sin repetir
+#una alerta pendiente para la misma IP
+#se guarda en guardar_alerta_unica
 def guardar_en_db(logs_csv, logs_fw):
     crear_tablas()
-    filas = [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "csv") for r in logs_csv]
-    filas +=  [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "firewall") for r in logs_fw]
+    filas = [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "csv", r.get("puerto") or "") for r in logs_csv]
+    filas +=  [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "firewall", r.get("puerto") or "" ) for r in logs_fw]
     nuevos = guardar_eventos(filas)
 
     est = calcular_estadisticas(logs_csv + logs_fw)
@@ -296,41 +343,35 @@ if __name__ == "__main__":
     datos = logs_csv + logs_fw 
 
     #Muestra cada evento 
-    print("\n--- Eventos de CSV---")
+    print("\n--- Eventos de ---de Inicio de sesion")
     for numero, r in enumerate(logs_csv, start=1):
         print(f"Evento {numero}: IP={r['ip']}, Usuario={r['usuario']}, Estado={r['estado']}")
 
+   #Muestra solo los primeros 10 del firewall porque son muchos
     print("\n--- Eventos del firewall ---") 
-    for numero, r in enumerate(logs_csv, start=1):
+    for numero, r in enumerate(logs_fw[:10], start=1):
         print(f"Evento {numero}: IP={r['ip']}, Usuario={r['usuario']}, Estado={r['estado']}")
-        print(leer_fecha("2026-10-06T10:15:30Z"), leer_fecha("08/10/2026 9:06:00"), leer_fecha("basura"))
+
     print("\n---RESUMEN PARA LA IA---")
     print(generar_resumen(datos))
-    
 
-
-    #resumen por estado
-    print("Resumen por estado:" , resumen_por_estado(datos))
-
-    #IPs sospechosas
-    sospechosos= detectar_sospechosos(datos)
-   
-    if sospechosos:
+    #usa calcular_estadisticas para separar las fuentes,
+    #igual que la app
+    est = calcular_estadisticas(datos)
+    if est["sospechosos"]:
         print("\nIPs sospechosas: ")
-        for ip, cantidad in sospechosos.items():
-            print(f"   - {ip}: {cantidad}  intentos fallidos")
-    else:
-        print("\n No se detectaron IPs sospechosas. ")
+        for ip, cantidad in est["sospechosos"].items():
+            print(f"  -{ip}: {cantidad} intentos fallidos")
+    else: 
+        print("\nNo se detectaron IPs sospechosas.")
 
-    
-    print("\nAnalisis por ventana de tiempo:    ")
-    for ip, tipo in detectar_ataques(datos).items():
-        print(f"  -{ip}: {tipo}")
+    print("\nAtaques automatizados: ", est["ataques"] or "ninguno")
+    print("\nPosibles escaneos: ", est["escaneos"] or "ninguno")
+    print("\nCorrelaciones: ", est["ataques"] or "ninguna")
+
+
     print(f"\n    INGESTA FINALIZADA CON EXITO: {len(datos)}  registros procesados   ")
-    datos_rag = [a_esquema_rag(r) for r in datos]
-    print("\n---Ejemplo de registro de formato RAG---")
-    print(datos_rag[0])
-
+   
    
 
     

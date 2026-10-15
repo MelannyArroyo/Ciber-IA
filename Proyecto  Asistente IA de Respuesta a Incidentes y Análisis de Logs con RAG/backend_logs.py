@@ -154,7 +154,7 @@ def filtrar_eventos(datos, ip_filtro="", estados=("OK", "FAIL", "DENY")):
             "IP": r["ip"],
             "Usuario": r["usuario"],
             "Estado": r["estado"],
-            "Fecha": r["tiempo"] or "Sin fecha en el log",
+            "Fecha": r["tiempo"].strftime("%Y-%m-%d %H:%M:%S")  if r["tiempo"] else "Sin fecha en el log",
         })
     return filas
 

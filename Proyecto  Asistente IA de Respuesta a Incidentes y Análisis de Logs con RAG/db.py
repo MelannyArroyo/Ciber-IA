@@ -29,7 +29,9 @@ def crear_tablas(): #escribe en el lenguaje SQL, las cuatro tablas cada una es c
             usuario TEXT,
             estado TEXT,
             tiempo TEXT,
-            fuente TEXT
+            fuente TEXT,
+            puerto TEXT,
+            UNIQUE (ip, usuario, estado, tiempo, fuente,puerto)     
             );
 
             CREATE TABLE IF NOT EXISTS alertas ( 
@@ -53,7 +55,7 @@ def a_texto(tiempo):
 def guardar_eventos(lista_eventos):
     with conectar() as con:
         cur = con.executemany(
-            "INSERT OR IGNORE INTO eventos (ip, usuario, estado, tiempo, fuente) VALUES(?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO eventos (ip, usuario, estado, tiempo, fuente, puerto) VALUES(?, ?, ?, ?, ?, ?)",
             lista_eventos
         )
         return cur.rowcount #cuantos se insertaron realmente 

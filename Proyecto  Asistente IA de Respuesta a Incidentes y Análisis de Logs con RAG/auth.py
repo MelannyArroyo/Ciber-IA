@@ -42,3 +42,20 @@ def verificar_usuario(nombre_usuario, contrasena):
     if bcrypt.checkpw(contrasena.encode("utf-8"), fila["contrasena_hash"].encode("utf-8")):
         return fila["rol"]
     return None 
+
+PERMISOS = {
+    "administrador": {"ver_panel", "usar_chat", "descargar_informe", "gestionar_usuarios"},
+    "analista": {"ver_panel", "usar_chat", "descargar_informe"},
+}
+
+def tiene_permiso(rol, accion):
+    """Devuelve True si el rol puede hacer esa accion"""
+    return accion in PERMISOS.get(rol, set())
+
+def listar_usuarios():
+    """Lista usuarios sin mostrar la contraseña cifrada"""
+    with conectar() as con:
+        filas = con.execute(
+            "SELECT nombre_usuario, rol, creado FROM usuarios ORDER BY nombre_usuario"
+        ).fetchall()
+    return[dict(f) for f in filas]
