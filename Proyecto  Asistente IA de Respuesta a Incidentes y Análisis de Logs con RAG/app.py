@@ -12,7 +12,7 @@ from Ingest_modulo1 import (
 )
 from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
 from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
-from db import crear_tablas
+from db import crear_tablas, listar_informes, obtener_informe
 # pagina web
 st.set_page_config(
     page_title="Colmena Technologies",
@@ -152,6 +152,28 @@ st.download_button(
     on_click=registrar_informe,
     args=(resumen,),
 )
+st.subheader("Historial de informes")
+informes = listar_informes()
+if informes:
+    #realciona cada id con el texto
+    opciones = {i["id"]: f"{i['nombre_archivo']} ({i['creado']})" for i in informes}
+    elegido = st.selectbox(
+        "Elige un informe guardado",
+        #solo va a dar los id
+        list(opciones),
+        #recibe un id y devuelve un texto y se usa para mostrar cada opcion
+        format_func=lambda id_informe: opciones[id_informe],
+    )
+    nombre, contenido = obtener_informe(elegido)
+    st.download_button(
+        "Descargar informe guardado",
+        data=contenido,
+        file_name=nombre,
+        mime="application/pdf",
+        key="descargar historial", #Es para que se distinga los botones de descarga
+    )
+else:
+    st.info("Todavía no hay informes guardados")
 
 st.divider()    
 

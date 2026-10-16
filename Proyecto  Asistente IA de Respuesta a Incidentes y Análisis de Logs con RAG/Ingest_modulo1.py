@@ -152,7 +152,7 @@ def interpretar_linea(linea):
     tiempo = leer_fecha(f"{fecha} {hora}")
 
     
-    return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo, "puerto":puerto}
+    return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo, "puerto":puerto, "original":linea.strip()}
 
 #salta las lineas del encabezado del log
 #lee pfirewall.log linea por linea
@@ -317,13 +317,13 @@ def a_esquema_rag(registro):
 def _texto(t):
     return t.strftime("%Y-%m-%d %H:%M:%S") if t else None 
 
-#guarda los eventos y crea alertas sin repetir
-#una alerta pendiente para la misma IP
-#se guarda en guardar_alerta_unica
+#guarda los eventos y crea alertas sin repetir,
+# Crea una alerta por IP para cada tipo de ataque detectado
+#se guarda en soc.db 
 def guardar_en_db(logs_csv, logs_fw):
     crear_tablas()
-    filas = [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "csv", r.get("puerto") or "") for r in logs_csv]
-    filas +=  [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "firewall", r.get("puerto") or "" ) for r in logs_fw]
+    filas = [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "csv", r.get("puerto") or "", r.get("original") or "")   for r in logs_csv]
+    filas +=  [(r["ip"], r["usuario"], r["estado"], _texto(r["tiempo"]), "firewall", r.get("puerto") or "",  r.get("original") or "") for r in logs_fw]
     nuevos = guardar_eventos(filas)
 
     est = calcular_estadisticas(logs_csv + logs_fw)
@@ -367,7 +367,7 @@ if __name__ == "__main__":
 
     print("\nAtaques automatizados: ", est["ataques"] or "ninguno")
     print("\nPosibles escaneos: ", est["escaneos"] or "ninguno")
-    print("\nCorrelaciones: ", est["ataques"] or "ninguna")
+    print("\nCorrelaciones: ", est["correlaciones"] or "ninguna")
 
 
     print(f"\n    INGESTA FINALIZADA CON EXITO: {len(datos)}  registros procesados   ")

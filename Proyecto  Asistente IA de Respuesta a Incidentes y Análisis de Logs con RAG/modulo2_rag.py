@@ -67,7 +67,7 @@ def agregar_logs_a_vectorstore(lista_de_logs: list[dict]) -> int:
         documents.append(texto_log)
         metadatas.append({k: str(v) for k, v in log.items()})
 
-    collection.add(
+    collection.upsert(
         ids=ids,
         embeddings=embeddings,
         documents=documents,

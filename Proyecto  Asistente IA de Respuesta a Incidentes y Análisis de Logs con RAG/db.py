@@ -31,7 +31,8 @@ def crear_tablas(): #escribe en el lenguaje SQL, las cuatro tablas cada una es c
             tiempo TEXT,
             fuente TEXT,
             puerto TEXT,
-            UNIQUE (ip, usuario, estado, tiempo, fuente,puerto)     
+            original TEXT,
+            UNIQUE (ip, usuario, estado, tiempo, fuente,puerto, original)     
             );
 
             CREATE TABLE IF NOT EXISTS alertas ( 
@@ -55,7 +56,7 @@ def a_texto(tiempo):
 def guardar_eventos(lista_eventos):
     with conectar() as con:
         cur = con.executemany(
-            "INSERT OR IGNORE INTO eventos (ip, usuario, estado, tiempo, fuente, puerto) VALUES(?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO eventos (ip, usuario, estado, tiempo, fuente, puerto, original) VALUES(?, ?, ?, ?, ?, ?, ?)",
             lista_eventos
         )
         return cur.rowcount #cuantos se insertaron realmente 
@@ -102,7 +103,7 @@ def listar_informes(limite=20):
     """Lista informes sin cargar el contenido o se va a ser mas liviano"""
     with conectar() as con:
         filas = con.execute(
-            "SELECT id,creando, nombre_archivo FROM informes ORDER BY creando DESC LIMIT ?",
+            "SELECT id,creado, nombre_archivo FROM informes ORDER BY creado DESC LIMIT ?",
             (limite,),
         ).fetchall()
         return[dict(f) for f in filas]
@@ -116,7 +117,7 @@ def obtener_informe(id_informe):
         ).fetchone() 
     if fila is  None:
         return None
-    return(fila["nombre_archivo"], fila["comtenido"])
+    return(fila["nombre_archivo"], fila["contenido"])
 
     
 def guardar_alerta(tipo, ip=None, detalle=None):
@@ -134,10 +135,10 @@ def consultar_eventos(ip=None, usuario=None, estado=None, limite=100):
         sql += " AND ip = ? "
         params.append(ip)
     if usuario:
-        sql+= " AND ip = ? "
-        params.append
+        sql+= " AND usuario = ? "
+        params.append(usuario)
     if estado:
-        sql+=  " AND ip = ? "
+        sql+=  " AND estado = ? "
         params.append(estado)
     sql +=  " ORDER BY tiempo DESC LIMIT ? "
     params.append(limite)

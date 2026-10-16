@@ -1,0 +1,7 @@
+.env
+.venv/
+soc.db
+chroma_db/
+eventos_windows.csv
+__pycache__/
+pfirewall.log
