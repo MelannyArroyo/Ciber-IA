@@ -75,10 +75,10 @@ def contar_fallos_por_ip(minimo=5):
     return [dict(f) for f in filas]
 
 def guardar_alerta_unica(tipo,ip,detalle=None):
-    """Va a crear la alerta solo si no existe una igual pendiente para  es IP"""
+    """Crea la alerta solo si no existe una igual para esa IP"""
     with conectar () as con:
         existe = con.execute(
-            "SELECT 1 FROM alertas WHERE tipo = ? AND ip = ? AND enviada = 0",
+            "SELECT 1 FROM alertas WHERE tipo = ? AND ip = ?",
             (tipo,ip),
         ).fetchone()
         if existe: 
@@ -144,7 +144,8 @@ def consultar_eventos(ip=None, usuario=None, estado=None, limite=100):
     params.append(limite)
     with conectar() as con:
         return [dict(f) for f in con.execute(sql, params).fetchall()]
-
+    
+#Busca alertas
 def consultar_alertas(tipo=None, ip=None, solo_pendientes=False, limite=100):
     sql = "SELECT * FROM alertas WHERE 1=1"
     params = []
@@ -152,7 +153,7 @@ def consultar_alertas(tipo=None, ip=None, solo_pendientes=False, limite=100):
         sql +=  " AND tipo = ? "
         params.append(tipo)
     if ip:
-        sql +=  " AND tipo = ? "
+        sql +=  " AND ip = ? "
         params.append(ip)
     if solo_pendientes:
         sql +=  " AND enviada = 0 "
@@ -160,6 +161,13 @@ def consultar_alertas(tipo=None, ip=None, solo_pendientes=False, limite=100):
     params.append(limite)
     with conectar() as con:
         return [dict(f) for f in con.execute(sql,params).fetchall()]
+    
+# las marca como enviadas 
+def marcar_alerta_enviada(id_alerta):
+    """Va a marcar una alerta como enviada para no repetirla"""
+    with conectar() as con:
+        con.execute("UPDATE alertas SET enviada = 1 WHERE id = ?", (id_alerta,))
+
 
   
   

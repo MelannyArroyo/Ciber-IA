@@ -127,6 +127,8 @@ Analiza la siguiente consulta utilizando EXCLUSIVAMENTE el contexto de logs prov
         "gemini-2.0-flash",
         "gemini-1.5-flash",
         "gemini-2.5-pro"
+        "gemini-3.8-flash",
+        "gemini-3.1-pro-preview"
     ]
 
     # Filtrar únicamente modelos válidos para texto desde la API
@@ -164,10 +166,19 @@ Analiza la siguiente consulta utilizando EXCLUSIVAMENTE el contexto de logs prov
 
 # --- BLOQUE DE EJECUCIÓN DIRECTA ---
 if __name__ == "__main__":
+    MAX_FIREWALL = 200
     logs_csv = ingestar_logs(ruta_archivo)
     logs_fw = ingestar_firewall(ruta_firewall)
-    logs_rag = [a_esquema_rag(r) for r in logs_csv + logs_fw]
 
+  #Todos los inicios de sesion y solo los bloqueos de firewall
+    bloqueos = [r for r in logs_fw if r["estado"] == "DENY"] [:MAX_FIREWALL]
+    relevantes = logs_csv + bloqueos
+#Borra los datos de muestra que habia antes
+    viejos = collection.get()["ids"]
+    if viejos:
+        collection.delete(ids=viejos)
+        print(f"Se borraron {len(viejos)} eventos de muestra")
+    logs_rag = [a_esquema_rag (r) for r in relevantes]
     total = agregar_logs_a_vectorstore(logs_rag)
     print(f"Se guardaron {[total]} eventos en ChromaDB")
 

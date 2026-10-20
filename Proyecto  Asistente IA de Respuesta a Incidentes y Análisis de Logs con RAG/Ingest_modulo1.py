@@ -221,6 +221,28 @@ def correlacionar(registros,ventana_segundos=600):
                     break
     return sorted(alertas)
 
+#Correlacion entre fuentes
+#Si la misma IP acumula intentos fallidos de inicio de sesion y tambien es bloqueada
+#por el firewall en poco tiempo porque es un ataque en varias capas
+def correlacionar_fuentes(logins, firewall, ventana_segundos=600):
+    """IPs con fallos de inicio de sesion y bloqueos del firewall cerca del tiempo"""
+    fallos = {}
+    # Guarda por cada IP las horas en que fallo el login
+    for r in logins:
+        if r["estado"] == "FAIL" and r["tiempo"]:
+            fallos.setdefault(r["ip"], []).append(r["tiempo"])
+            alertas = set()
+            #Revisa cada bloqueo del firewall y busca un fallo de login de la misma IP
+            for r in firewall:
+                if r["estado"] != "DENY" or not r["tiempo"]:
+                    continue
+                for t in fallos.get(r["ip"], []):
+                    #abs va a calcular la distancia en segundos sin importar cual paso primero
+                    if abs((r["tiempo"] - t).total_seconds()) <= ventana_segundos:
+                        alertas.add(r["ip"])
+                        break
+            return sorted(alertas)
+
 #Calcula cuantas cuentas distintas intento usar 
 #Identifica la gravedad de alerta segun la cuenta afectada
 def usuarios_atacados(registros, ips):
@@ -278,7 +300,8 @@ def calcular_estadisticas(registros):
         "escaneos": detectar_escaneos(firewall),
         "correlaciones": correlacionar(logins),
         "usuarios": usuarios_atacados(logins, list(top)),
-        "anomalias": detectar_anomalias_horarias(registros)
+        "anomalias": detectar_anomalias_horarias(registros),
+        "multifuente": correlacionar_fuentes(logins, firewall),
 
     }  
 
@@ -333,7 +356,13 @@ def guardar_en_db(logs_csv, logs_fw):
         guardar_alerta_unica("ESCANEO_PUERTOS", ip, "Muchos puertos bloqueados en la ventana")
     for ip in est["correlaciones"]:
         guardar_alerta_unica("POSIBLE_COMPROMISO",ip, "Fallos seguidos de acceso OK")
+    #Alerta de ataque en varias capas, tambien se envia por correo
+    for ip in est["multifuente"]:
+        guardar_alerta_unica("ATAQUE_MULTIFUENTE", ip , "Fallos de login y bloqueos del firewall desde la misma IP")
     return nuevos
+
+
+        
  
 
 #Solo va a correr si ejecuta este archivo directamente
