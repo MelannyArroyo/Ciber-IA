@@ -11,6 +11,7 @@ from Ingest_modulo1 import (
     interpretar_linea,
     leer_fecha,
     correlacionar_fuentes,
+    es_cuenta_de_sistema,
     
 )
 BASE = datetime(2026, 10, 16, 10, 0, 0)#Hora de inicio fija para que las pruebas den siempre el mismo resultado
@@ -102,6 +103,13 @@ def test_multifuente_lejano_no_correlacion():
 #Un texto que no es fecha se devuelve a un None en vez de detener el programa 
 def test_fecha_invalida():
     assert leer_fecha("no es una fecha") is None
+
+#Las cuentas de servicio de Windows se descartan,los usuarios reales no
+def test_cuentas_de_sistema():
+    assert es_cuenta_de_sistema("Servicio de red") is True
+    assert es_cuenta_de_sistema("SERVICIO LOCAL") is True
+    assert es_cuenta_de_sistema("DESKTOP-ABC$") is True
+    assert es_cuenta_de_sistema("Melanny") is False
 
 #Corre todas las funciones y cuenta cuantas pasaron 
 if __name__== "__main__":

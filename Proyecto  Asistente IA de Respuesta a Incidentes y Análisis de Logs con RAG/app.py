@@ -305,6 +305,22 @@ with tab_detecciones:
             st.error(f" La IP {ip} tiene fallos de login y bloqueo del firewall en poco tiempo")
     else:
         st.success("No se detectaron ataques en varias capas")
+
+    #Ranking de eventos mas frecuentes
+    st.subheader("Eventos más frecuentes")
+    col_ips, col_usuarios, col_puertos = st.columns(3)
+    with col_ips:
+        st.markdown("**IPs**")
+        st.dataframe([{"IP": ip, "Eventos": n} for ip, n in resumen["ranking"]["ips"]],
+                     use_container_width=True, hide_index=True)
+    with col_usuarios:
+        st.markdown("**Usuarios**")
+        st.dataframe([{"Usuario": u, "Eventos": n} for u, n in resumen["ranking"]["usuarios"]],
+                     use_container_width=True, hide_index=True)
+    with col_puertos:
+        st.markdown("**Puertos del Firewall**")
+        st.dataframe([{"Puerto": p, "Eventos": n} for p, n in resumen["ranking"]["puertos"]],
+                     use_container_width=True, hide_index=True)
         
 
 

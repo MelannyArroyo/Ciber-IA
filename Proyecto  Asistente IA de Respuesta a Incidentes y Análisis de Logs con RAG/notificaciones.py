@@ -50,7 +50,7 @@ def enviar_alertas_pendientes():
         if enviar_correo(asunto, cuerpo):
             marcar_alerta_enviada(a["id"])
             enviadas += 1
-        return enviadas
+    return enviadas
 
 if __name__ == "__main__":
     ok = enviar_correo("Prueba SOC", "Correo de prueba del asistente de logs")

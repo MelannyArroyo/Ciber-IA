@@ -75,14 +75,19 @@ def agregar_logs_a_vectorstore(lista_de_logs: list[dict]) -> int:
     )
     return len(lista_de_logs)
 
-
 def buscar_logs_relevantes(pregunta_usuario: str, top_k: int = 5) -> list[str]: 
     """Primero busca los logs de las IPs mencionadas y luego completa similitud vectorial."""
+   
     docs_ip = []
     for ip in re.findall(r"\d{1,3}(?:\.\d{1,3}){3}", pregunta_usuario):
-   
         encontrados = collection.get(where={"src_ip": ip}, limit=20)
         docs_ip.extend(encontrados.get("documents", []))
+    
+#Siempre incluye los fallos y bloqueos, que son los eventos de seguridad
+    docs_alerta = []
+    for estado in ("FAIL","DENY"):
+        encontrados = collection.get(where={"status": estado}, limit=30)
+        docs_alerta.extend(encontrados.get("documents", []))
         
     vector_pregunta = obtener_embedding(pregunta_usuario)
     resultados = collection.query(

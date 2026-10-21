@@ -29,6 +29,15 @@ VENTANA_SEGUNDOS = 60
 FALLOS_EN_VENTANA = 5
 UMBRAL_FALLOS = 5 
 PUERTOS_EN_VENTANA = 10
+#Cuentas que usa windows para sus propios servicios
+#Inician sesion solas, por eso, se descartan como ruido
+CUENTAS_SISTEMA = {"SYSTEM", "SISTEMA", "LOCAL SERVICE", "SERVICIO LOCAL",
+                    "NETWORK SERVICE", "SERVICIO DE RED"}
+
+def es_cuenta_de_sistema(usuario):
+    """True si el usuario es una cuenta de servicio de windows o equipo"""
+    usuario = usuario.strip().upper()
+    return usuario in CUENTAS_SISTEMA or usuario.endswith("$")
 
 #se añade un def para que lea la fecha 
 # se agrega el none para que el programa no se detenga por alguna fecha de una fila
@@ -46,6 +55,7 @@ def ingestar_logs(ruta):
     """Lee el CSV limpia cada fila y devuelve una lista de registros."""
     registros = []
     descartadas = 0
+    ruido = 0
 
     try: 
         # carga segura de csv valida la estructura 
@@ -69,6 +79,11 @@ def ingestar_logs(ruta):
                 if not ip or not usuario or not estado:
                     descartadas += 1
                     continue
+                #Descarta las cuentas de servicio de Windows
+                if es_cuenta_de_sistema(usuario):
+                    ruido += 1
+                    continue
+
                 registros.append({"ip": ip, "usuario": usuario, "estado": estado, "tiempo": tiempo})
     except FileNotFoundError:
         print(f"Error no se encontro el archivo en {ruta}")
@@ -79,7 +94,7 @@ def ingestar_logs(ruta):
     except UnicodeDecodeError:
         print("Error: el archivo tiene una codificacion no valida.")
         
-    print(f"Registros validos: {len(registros)}   │ Descartados: {descartadas}")
+    print(f"Registros validos: {len(registros)}   │ Descartados: {descartadas} │ Ruido de sistema: {ruido}")
     return registros
 
 def resumen_por_estado(registros):
@@ -242,6 +257,17 @@ def correlacionar_fuentes(logins, firewall, ventana_segundos=600):
                         alertas.add(r["ip"])
                         break
             return sorted(alertas)
+#Son los eventos que mas se repiten 
+#Sirve para conocer el comportamiento normal y notar cambios
+def ranking_eventos(registros, n=5):
+    """Devuelve las IPs, usuarios y puertos mas frecuentes"""
+    logins = [r for r in registros if r["usuario"] != "firewall"]
+    firewall = [r for r in registros if r["usuario"] == "firewall"]
+    return {
+        "ips": Counter(r["ip"] for r in registros).most_common(n),
+        "usuarios": Counter(r["usuario"] for r in logins).most_common(n),
+        "puertos": Counter(r["puerto"] for r in firewall if r.get("puerto")).most_common(n)
+    }
 
 #Calcula cuantas cuentas distintas intento usar 
 #Identifica la gravedad de alerta segun la cuenta afectada
@@ -302,6 +328,7 @@ def calcular_estadisticas(registros):
         "usuarios": usuarios_atacados(logins, list(top)),
         "anomalias": detectar_anomalias_horarias(registros),
         "multifuente": correlacionar_fuentes(logins, firewall),
+        "ranking": ranking_eventos(registros),
 
     }  
 
