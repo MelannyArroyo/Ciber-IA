@@ -33,11 +33,16 @@ PUERTOS_EN_VENTANA = 10
 #Inician sesion solas, por eso, se descartan como ruido
 CUENTAS_SISTEMA = {"SYSTEM", "SISTEMA", "LOCAL SERVICE", "SERVICIO LOCAL",
                     "NETWORK SERVICE", "SERVICIO DE RED"}
+IPs_LOCALES = {"-", "::1", "127.0.0.1"}
+#Cuentas virtuales que windows crea en cada inicio de sesion(DWM-1,UMFD-0, etc.)
+PREFIJOS_SISTEMA = ("DWM-", "UMFD-")
 
 def es_cuenta_de_sistema(usuario):
     """True si el usuario es una cuenta de servicio de windows o equipo"""
     usuario = usuario.strip().upper()
-    return usuario in CUENTAS_SISTEMA or usuario.endswith("$")
+    return (usuario in CUENTAS_SISTEMA 
+            or usuario.endswith("$")
+            or usuario.startswith(PREFIJOS_SISTEMA))
 
 #se añade un def para que lea la fecha 
 # se agrega el none para que el programa no se detenga por alguna fecha de una fila
@@ -83,6 +88,9 @@ def ingestar_logs(ruta):
                 if es_cuenta_de_sistema(usuario):
                     ruido += 1
                     continue
+                if ip in IPs_LOCALES:
+                    ip = "LOCAL"
+            
 
                 registros.append({"ip": ip, "usuario": usuario, "estado": estado, "tiempo": tiempo})
     except FileNotFoundError:
@@ -269,7 +277,7 @@ def ranking_eventos(registros, n=5):
         "puertos": Counter(r["puerto"] for r in firewall if r.get("puerto")).most_common(n)
     }
 
-#Calcula cuantas cuentas distintas intento usar 
+#Calcula cuantas cuentas distintas que se intento usar 
 #Identifica la gravedad de alerta segun la cuenta afectada
 def usuarios_atacados(registros, ips):
     """Funciona para cada IP sospechosa, devuelve (usuario mas atacado, intentos, cuentas distintas)."""
