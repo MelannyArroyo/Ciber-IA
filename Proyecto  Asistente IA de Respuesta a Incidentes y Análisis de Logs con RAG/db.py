@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from datetime import datetime
 
 RUTA_DB= os.path.join(os.path.dirname(os.path.abspath(__file__)), "soc.db")
 #Abre la base como abrir un archivo de excel antes de escribir en el 
@@ -50,7 +51,28 @@ def crear_tablas(): #escribe en el lenguaje SQL, las cuatro tablas cada una es c
             nombre_archivo TEXT,
             contenido BLOB
             );
+
+            CREATE TABLE IF NOT EXISTS cuentas_web (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario TEXT UNIQUE NOT NULL,
+            correo_principal TEXT NOT NULL,
+            clave_hash BLOB NOT NULL
+            ); 
+
+            CREATE TABLE IF NOT EXISTS accesos_web (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tiempo TEXT DEFAULT (datetime('now','locatime')),
+            usuario TEXT,
+            correo_principal TEXT,
+            ip TEXT,
+            dispositivo TEXT,
+            user_agent TEXT,
+            estado TEXT, 
+            motivo TEXT
+            );
+
         """)
+        
 def a_texto(tiempo):
     return tiempo.strftime("%Y-%m-%d %H:%M:%S") if tiempo else None
 def guardar_eventos(lista_eventos):
@@ -168,8 +190,30 @@ def marcar_alerta_enviada(id_alerta):
     with conectar() as con:
         con.execute("UPDATE alertas SET enviada = 1 WHERE id = ?", (id_alerta,))
 
+def crear_cuenta_web(usuario, correo_principal, clave_hash):
+    """Guarda una cuenta  de prueba del servidor web"""
+    with conectar () as con: 
+        con.execute(
+            "INSERT OR IGNORE INTO cuentas_web (usuario, correo_principal, clave_hash) VALUES (?, ?, ?)",
+            (usuario, correo_principal, clave_hash),
+        )
 
-  
+def buscar_cuenta_web(usuario):
+    """Devuelve la cuenta si existe, o None si no existe"""
+    with conectar () as con: 
+        return con.execute(
+            "SELECT * FROM cuentas_web WHERE usuario = ?", (usuario,)
+        ).fetchone()
+
+def guardar_acceso_web( usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo):
+    """ Guarda cada intento de inicio de sesion en el servidor web"""
+    tiempo = datetime.now().strftime("%Y-%m-%d %H:%M:%S") #Fecha y hora del intento
+    with conectar () as con: 
+        con.execute(
+            "INSERT INTO accesos_web(tiempo, usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (tiempo, usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo),
+           
+        )
   
 #Solo corre cuando se ejecuta el archivo directamente
 if __name__ == "__main__":

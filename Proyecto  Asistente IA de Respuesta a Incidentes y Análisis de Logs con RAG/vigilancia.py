@@ -40,6 +40,12 @@ def vigilar():
         archivo.write(linea + "\n")
 
 if __name__ == "__main__":
-    vigilar()
+    try:
+        vigilar()
+    except Exception as error:
+# Si algo falla, lo deja anotado en el log en vez de fallar en silencio
+        with open(RUTA_REGISTRO, "a", encoding="utf-8-sig") as archivo:
+            archivo.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] ERROR: {error}\n")
+
 
     
