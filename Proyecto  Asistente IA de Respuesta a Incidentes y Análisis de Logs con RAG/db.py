@@ -214,8 +214,29 @@ def guardar_acceso_web( usuario, correo_principal, ip, dispositivo, user_agent, 
             (tiempo, usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo),
            
         )
+def leer_accesos_web():
+    """Convierte los accesos del servidor web al formato que usan las detecciones"""
+    with conectar () as con: 
+        filas = con.execute(
+            "SELECT tiempo, usuario, correo_principal, ip, dispositivo, estado, motivo FROM accesos_web"
+        ).fetchall()
+    registros = []
+    for fila in filas: 
+        #Convierte el texto de la fecha en un datetime, como en el Modulo 1 
   
+        tiempo = datetime.strptime(fila["tiempo"], "%Y-%m-%d %H:%M:%S") if fila ["tiempo"] else None
 #Solo corre cuando se ejecuta el archivo directamente
+        registros.append({
+            "ip": fila["ip"],
+            "usuario": fila["usuario"],
+            "estado": fila["estado"],
+            "tiempo": tiempo,
+            "puerto": None, # El login web no tiene puerto
+            "correo_principal": fila["correo_principal"],
+            "dispositivo": fila["dispositivo"],
+            "motivo": fila["motivo"],
+        })
+    return registros
 if __name__ == "__main__":
     crear_tablas()
     print("Base lista en:", RUTA_DB)

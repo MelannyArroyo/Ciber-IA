@@ -12,6 +12,8 @@ from Ingest_modulo1 import (
     leer_fecha,
     correlacionar_fuentes,
     es_cuenta_de_sistema,
+    detectar_enumeracion,
+    detectar_varios_dispositivos,
     
 )
 BASE = datetime(2026, 10, 16, 10, 0, 0)#Hora de inicio fija para que las pruebas den siempre el mismo resultado
@@ -111,6 +113,33 @@ def test_cuentas_de_sistema():
     assert es_cuenta_de_sistema("DESKTOP-ABC$") is True
     assert es_cuenta_de_sistema("Melanny") is False
 
+#Prueba distintos usuarios que no existen 
+def test_enumeracion_detectada():
+    registros = [
+        {"ip": "10.0.0.20", "usuario": nombre, "estado": "FAIL", "tiempo": BASE, "motivo": "USUARIO_NO_EXISTE"}
+        for nombre in ["admin", "root", "test", "soporte", "invitado"]
+    ]
+    assert detectar_enumeracion(registros) == {"10.0.0.20": 5}
+# el mismo usuario 10 veces no es enumeracion porque es alguien que escribio mal su usuario
+def test_mismo_usuario_no_es_enumeracion():
+    registros = [
+        {"ip": "10.0.0.21", "usuario": "admin", "estado": "FAIL", "tiempo": BASE, "motivo": "USUARIO_NO_EXISTE"}
+        for _ in range (10)
+    ]
+    assert detectar_enumeracion(registros) == {}
+
+# Mismo correo en el celular y compu con 5min de diferencia si se detecta 
+def test_varios_dispositivos_detectado():
+    registros = [
+        {"ip": "127.0.0.1", "usuario": "ana", "estado": "OK", "tiempo": BASE,
+         "correo_principal": "ana@correo.com", "dispositivo": "COMPUTADORA"},
+         {"ip": "192.168..1.73", "usuario": "ana", "estado": "OK", "tiempo": BASE + timedelta(minutes=5),
+          "correo_principal": "ana@correo.com", "dispositivo": "TELEFONO"},
+    ]
+    assert detectar_varios_dispositivos(registros) == ["ana@correo.com"]
+
+
+
 #Corre todas las funciones y cuenta cuantas pasaron 
 if __name__== "__main__":
     pruebas = [f for nombre, f in list(globals().items()) if nombre.startswith("test_")]
@@ -118,10 +147,10 @@ if __name__== "__main__":
     for prueba in pruebas:
         try:
             prueba()
-            print(f"OK{prueba.__name__}" )
+            print(f" OK{prueba.__name__} " )
             pasaron += 1
         except AssertionError:
-            print(f"FALLO  {prueba.__name__}")
+            print(f" FALLO  {prueba.__name__} ")
     print(f"{pasaron} de {len(pruebas)} pruebas pasaron")
 
 

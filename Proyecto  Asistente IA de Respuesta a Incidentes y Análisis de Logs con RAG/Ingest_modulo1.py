@@ -29,6 +29,8 @@ VENTANA_SEGUNDOS = 60
 FALLOS_EN_VENTANA = 5
 UMBRAL_FALLOS = 5 
 PUERTOS_EN_VENTANA = 10
+USUARIOS_INEXISTENTES = 5 # Usuarios distintos que no existen para sospechar enimeracion 
+VENTANA_DISPOSITIVOS = 500 # Segundos entre los accesos desde dispositivos distintos
 #Cuentas que usa windows para sus propios servicios
 #Inician sesion solas, por eso, se descartan como ruido
 CUENTAS_SISTEMA = {"SYSTEM", "SISTEMA", "LOCAL SERVICE", "SERVICIO LOCAL",
@@ -276,12 +278,35 @@ def ranking_eventos(registros, n=5):
         "usuarios": Counter(r["usuario"] for r in logins).most_common(n),
         "puertos": Counter(r["puerto"] for r in firewall if r.get("puerto")).most_common(n)
     }
+def detectar_enumeracion(registros, umbral=USUARIOS_INEXISTENTES):
+    """IPs que prueban muchos usuarios que no existen"""
+    intentos = {}
+    for r in registros:
+        if r.get("motivo") == "USUARIO_NO_EXISTE":
+            intentos.setdefault(r["ip"], set()).add(r["usuario"])
+    return {ip: len(usuarios) for ip, usuarios in intentos.items() if len(usuarios) >= umbral}
+
+def detectar_varios_dispositivos(registros, ventana=VENTANA_DISPOSITIVOS):
+    """Correos con accesos correctos desde dispositivos o IPs distintas en poco tiempo"""
+    accesos = {}
+    for r in registros:
+        if r.get("correo_principal") and r["estado"] == "OK" and r["tiempo"]:
+            accesos.setdefault(r["correo_principal"], []).append((r["tiempo"], r["dispositivo"], r["ip"]))
+    alertas = []
+    for correo, lista in accesos.items():
+        lista.sort()
+        for i in range(len(lista) - 1):
+            t1, disp1, ip1 = lista[i]
+            t2, disp2, ip2 = lista[i + 1]
+            if (t2 - t1).total_seconds() <= ventana and (disp1 != disp2 or ip1 != ip2):
+                alertas.append(correo)
+                break
+    return alertas
 
 #Calcula cuantas cuentas distintas que se intento usar 
 #Identifica la gravedad de alerta segun la cuenta afectada
 def usuarios_atacados(registros, ips):
     """Funciona para cada IP sospechosa, devuelve (usuario mas atacado, intentos, cuentas distintas)."""
-
     intentos = {}
     #Cuenta cuantas veces cada IP fallo con cada usuario
     for r in registros:
@@ -337,6 +362,8 @@ def calcular_estadisticas(registros):
         "anomalias": detectar_anomalias_horarias(registros),
         "multifuente": correlacionar_fuentes(logins, firewall),
         "ranking": ranking_eventos(registros),
+        "enumeracion": detectar_enumeracion(registros),
+        "varios_dispositivos": detectar_varios_dispositivos(registros),
 
     }  
 
