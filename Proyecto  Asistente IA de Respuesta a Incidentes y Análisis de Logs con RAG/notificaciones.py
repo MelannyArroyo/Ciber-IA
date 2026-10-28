@@ -1,8 +1,19 @@
 import os
 import smtplib #Libreria que conecta con el servidor del correo y envia el mensaje
+SEVERIDAD = {
+    "POSIBLE_COMPROMISO": "ALTO",
+    "POSIBLE_COMPROMISO:WEB": "ALTO",
+    "ATAQUE_MULTIFUENTE": "ALTO",
+    "ATAQUE_AUTOMATIZADO": "MEDIO",
+    "ATAQUE_AUTOMATIZADO_WEB": "MEDIO",
+    "ESCANEO_PUERTOS": "MEDIO",
+    "VARIOS_DISPOSITIVOS": "MEDIO",
+    "ENUMERACION_USUARIOS": "INFORMATIVO",
+}
 from email.message import EmailMessage #Sirve para armar el correo
 from dotenv import load_dotenv
 from db import consultar_alertas, marcar_alerta_enviada
+
 
 load_dotenv()
 # Leen el .env el correo que envia, la contraseña de la aplicacion 
@@ -38,10 +49,12 @@ def enviar_alertas_pendientes():
     """Envia por correo las alertas con enviada = 0 y las marca como enviadas"""
     enviadas = 0
     for a in consultar_alertas(solo_pendientes=True):
-        asunto = f"[SOC] {a['tipo']} desde {a['ip']}"
+        severidad = SEVERIDAD.get(a["tipo"], "MEDIO") # Si el tipo no esta en la lista, usa MEDIO   
+        asunto = f"[{severidad}] {a['tipo']} desde {a['ip']}"
         cuerpo = (
+            f"Severidad: {severidad}\n"
             f"Tipo: {a['tipo']}\n"
-            f"IP: {a['ip']}\n"
+            f"Origen: {a['ip']}\n"
             f"Detalle: {a['detalle']}\n"
             f"Fecha: {a['creada']}\n\n" 
             "Revisar en el Asistente IA de logs"

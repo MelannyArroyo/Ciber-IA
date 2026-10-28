@@ -14,7 +14,7 @@ from Ingest_modulo1 import (
 )
 from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
 from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
-from db import crear_tablas, listar_informes, obtener_informe
+from db import crear_tablas, listar_informes, obtener_informe, leer_accesos_web
 from notificaciones import enviar_alertas_pendientes
 # pagina web
 st.set_page_config(
@@ -477,5 +477,60 @@ with tab_report:
             data=st.session_state.reporte_ia,
             file_name=f"Reporte_SOC_Colmena_{datetime.now().strftime('%Y%m%d')}.md",
         )
+
+# --------- Servidor WEB -------------
+web = leer_accesos_web()
+est_web = calcular_estadisticas(web)
+
+# Detecciones del servidor 
+with tab_detecciones:
+    st.markdown("---")
+    st.subheader("Servidor web")
+    if est_web["ataques"]:
+        for ip in est_web["ataques"]:
+            st.error(f"Fuerza bruta contra el login web desde {ip}")
+    else:
+        st.success("No hay fuerza bruta contra el login web.")
+    for ip in est_web["correlaciones"]:
+        st.error(f"Fallos seguidos de un acceso correcto en login web desde {ip}")
+    if est_web["enumeracion"]:
+        for ip, cantidad in est_web["enumeracion"].items():
+            st.warning(f"Enumeracion de usuarios desde {ip}: {cantidad} usuarios inexistentes")
+    else:
+        st.success("No se detecto enumeracion de usuarios")
+    if est_web["varios_dispositivos"]:
+        for correo in est_web["varios_dispositivos"]:
+                st.warning(f"La cuenta {correo} entro desde dispositivos distintos en poco tiempo")
+    else: 
+        st.success("No hay accesos desde varios dispositivos")
+
+# Tabla de accesos web con filtros
+with tab_explorer:
+    st.markdown("---")
+    st.markdown("##### Accesos al servidor web")
+    col_d, col_c = st.columns(2)
+    dispositivo = col_d.selectbox("Dispositivo", ["Todos", "COMPUTADORA", "TELEFONO"], key="filtro_dispositivo")
+    correos = sorted({r["correo_principal"] for r in web if r["correo_principal"]})
+    correo_elegido = col_c.selectbox("Correo principal", ["Todos"] + correos, key="filtro_correo")
+
+    filas_web = []
+    for r in web:
+        # salta los accesos que no coinciden con los filtros
+        if dispositivo != "Todos" and r["dispositivo"] != dispositivo:
+            continue
+        if correo_elegido != "Todos" and r["correo_principal"] != correo_elegido:
+            continue
+        filas_web.append({
+            "Fecha": r["tiempo"].strftime("%Y-%m-%d %H:%M: %S"),
+            "Usuario": r["usuario"],
+            "Correo principal": r["correo_principal"] or "",
+            "IP": r["ip"],
+            "Dispositivo": r["dispositivo"],
+            "Estado": r["estado"],
+            "Motivo": r["motivo"],
+
+        })
+    st.dataframe(filas_web, use_container_width=True)
+    st.caption(f"Mostrando {len(filas_web)} accesos")
 
   

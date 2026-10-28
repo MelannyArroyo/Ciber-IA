@@ -3,7 +3,7 @@ import os
 from collections import Counter #Para poder Contar OK,FAIL,DENY y fallos por ip
 from datetime import datetime, timedelta
 import statistics
-from db import crear_tablas,guardar_eventos,guardar_alerta_unica
+from db import crear_tablas,guardar_eventos,guardar_alerta_unica, leer_accesos_web
 import ipaddress
 
 
@@ -256,17 +256,18 @@ def correlacionar_fuentes(logins, firewall, ventana_segundos=600):
     for r in logins:
         if r["estado"] == "FAIL" and r["tiempo"]:
             fallos.setdefault(r["ip"], []).append(r["tiempo"])
-            alertas = set()
-            #Revisa cada bloqueo del firewall y busca un fallo de login de la misma IP
-            for r in firewall:
-                if r["estado"] != "DENY" or not r["tiempo"]:
-                    continue
-                for t in fallos.get(r["ip"], []):
-                    #abs va a calcular la distancia en segundos sin importar cual paso primero
-                    if abs((r["tiempo"] - t).total_seconds()) <= ventana_segundos:
-                        alertas.add(r["ip"])
-                        break
-            return sorted(alertas)
+    alertas = set()
+    #Revisa cada bloqueo del firewall y busca un fallo de login de la misma IP
+    for r in firewall:
+        if r["estado"] != "DENY" or not r["tiempo"]:
+            continue
+        for t in fallos.get(r["ip"], []):
+            #abs va a calcular la distancia en segundos sin importar cual paso primero
+            if abs((r["tiempo"] - t).total_seconds()) <= ventana_segundos:
+                alertas.add(r["ip"])
+                break
+    return sorted(alertas)
+        
 #Son los eventos que mas se repiten 
 #Sirve para conocer el comportamiento normal y notar cambios
 def ranking_eventos(registros, n=5):
@@ -421,8 +422,20 @@ def guardar_en_db(logs_csv, logs_fw):
     #Alerta de ataque en varias capas, tambien se envia por correo
     for ip in est["multifuente"]:
         guardar_alerta_unica("ATAQUE_MULTIFUENTE", ip , "Fallos de login y bloqueos del firewall desde la misma IP")
+     #Alertas del servidor web no se copian a los eventos porque ya estan guardados en accesos_web
+    web = leer_accesos_web()
+    est_web = calcular_estadisticas(web)
+    for ip in  est_web ["ataques"]:
+        guardar_alerta_unica("ATAQUE_AUTOMATIZADO_WEB", ip, "Fuerza bruta contra el login web")
+    for ip in est_web ["correlaciones"]:
+        guardar_alerta_unica("POSIBLE_COMPROMISO_WEB", ip, "Fallos seguidos de acceso OK en el login web")
+    for ip, cantidad in  est_web ["enumeracion"].items():
+        guardar_alerta_unica("ENUMERACION_USUARIOS", ip, f"{cantidad} usuarios inexsistentes probados")
+    for correo in est_web["varios_dispositivos"]:
+        guardar_alerta_unica("VARIOS_DISPOSITIVOS", correo, "Acceos OK desde dispositivos distintos en poco tiempo")
     return nuevos
 
+   
 
         
  

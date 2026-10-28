@@ -3,6 +3,8 @@ import bcrypt
 from db import crear_tablas, crear_cuenta_web, guardar_acceso_web, buscar_cuenta_web
 
 app = Flask(__name__)
+# es para que un usuario inexistente tarde lo mismo que uno real evita los ataque de tiempo
+HASH_FALSO = bcrypt.hashpw(b" clave_que_no_se_usa", bcrypt.gensalt())
 crear_tablas()  # Crea tablas nuevas si no existen 
 
 #Formulario HTML que sirve para registro y para login
@@ -53,6 +55,7 @@ def login():
 
         cuenta = buscar_cuenta_web(usuario)
         if cuenta is None:
+            bcrypt.checkpw(clave.encode("utf-8"), HASH_FALSO) # Gasta el mismo que uno de cuenta real 
             estado, motivo, correo = "FAIL", "USUARIO_NO_EXISTE", None
         elif bcrypt.checkpw(clave.encode("utf-8"), cuenta["clave_hash"]):
             estado, motivo, correo = "OK", "", cuenta["correo_principal"]

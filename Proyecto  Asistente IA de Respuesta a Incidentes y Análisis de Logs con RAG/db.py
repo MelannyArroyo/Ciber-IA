@@ -179,7 +179,7 @@ def consultar_alertas(tipo=None, ip=None, solo_pendientes=False, limite=100):
         params.append(ip)
     if solo_pendientes:
         sql +=  " AND enviada = 0 "
-    sql += "ORDER BY creada DESC LIMIT ?"
+    sql += " ORDER BY creada DESC LIMIT ?"
     params.append(limite)
     with conectar() as con:
         return [dict(f) for f in con.execute(sql,params).fetchall()]
