@@ -2,7 +2,7 @@ import os
 import smtplib #Libreria que conecta con el servidor del correo y envia el mensaje
 SEVERIDAD = {
     "POSIBLE_COMPROMISO": "ALTO",
-    "POSIBLE_COMPROMISO:WEB": "ALTO",
+    "POSIBLE_COMPROMISO_WEB": "ALTO",
     "ATAQUE_MULTIFUENTE": "ALTO",
     "ATAQUE_AUTOMATIZADO": "MEDIO",
     "ATAQUE_AUTOMATIZADO_WEB": "MEDIO",

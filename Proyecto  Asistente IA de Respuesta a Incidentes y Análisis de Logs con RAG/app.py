@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import time
 from datetime import datetime
 from modulo2_rag import analizar_incidentes_con_gemini, collection
 from Ingest_modulo1 import (
@@ -15,7 +16,9 @@ from Ingest_modulo1 import (
 from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
 from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
 from db import crear_tablas, listar_informes, obtener_informe, leer_accesos_web
-from notificaciones import enviar_alertas_pendientes
+from notificaciones import enviar_alertas_pendientes, SEVERIDAD
+inicio_pagina = time.perf_counter() #cronometro de toda la pagina
+
 # pagina web
 st.set_page_config(
     page_title="Colmena SOC - Incident Response Platform",
@@ -142,6 +145,7 @@ if st.session_state.rol is None:
         if rol:
             st.session_state.rol = rol
             st.session_state.usuario = usuario
+            st.rerun()
         else:
             st.error("Usuario o contraseña Incorrectos")
     st.stop()
@@ -169,12 +173,79 @@ with st.sidebar:
     if st.button("Cerrar sesion"):
         st.session_state.clear()
         st.rerun()
- 
 
-logs_cvs = ingestar_logs(ruta_archivo)
-logs_fw  = ingestar_firewall(ruta_firewall)
+@st.cache_data(ttl=60, show_spinner="Cargando logs.....")
+def cargar_datos():
+    """Lee todas las fuentes y calcula las detecciones, lo guarda 60 seg en memoria"""
+    logs_cvs = ingestar_logs(ruta_archivo)
+    logs_fw  = ingestar_firewall(ruta_firewall)
+    web = leer_accesos_web()
+    return logs_cvs, logs_fw, web, calcular_estadisticas(logs_cvs + logs_fw), calcular_estadisticas(web)
+
+@st.cache_data(ttl=60, show_spinner=False)
+def pdf_cacheado(resumen):
+    """Genera el PDF solo cuando cambian los resultados del analisis"""
+    return generar_informe_pdf(resumen)
+@st.cache_data(ttl=60, show_spinner=False)
+def tabla_eventos():
+    """Junta Windows. firewall y servidor web en una sola tabla con las mismas columnas"""
+    logs_cvs, logs_fw, web, _, _ = cargar_datos()
+    filas = []
+    for fuente, lista in (("Windows", logs_cvs), ("Firewall", logs_fw), ("Web", web)):
+        for r in lista:
+            filas.append({
+                "Fecha": r["tiempo"].strftime("%Y-%m-%d %H:%M:%S") if r["tiempo"] else "",
+                "Fuente": fuente,
+                "Usuario": r["usuario"],
+                "Correo principal": r.get("correo_principal") or "",
+                "IP": str(r["ip"]),
+                "Dispositivo": r.get("dispositivo") or "COMPUTADORA",
+                "Puerto": r.get("puerto") or "",
+                "Estado": r["estado"],
+                "Motivo": r.get("motivo") or "",
+            })
+    tabla = pd.DataFrame(filas)
+    return tabla.sort_values("Fecha", ascending= False) # Lo mas reciente primero
+
+def lista_detecciones(resumen, est_web):
+    """Junta todas las detecciones en una sola"""
+    filas = []
+
+    def agregar(tipo, fuente, origen, detalle):
+        # Cada deteccion toma su severidad del mismo diccionario que usan los correos
+        filas.append({
+            "Severidad": SEVERIDAD.get(tipo, "MEDIO"),
+            "Tipo": tipo,
+            "Fuente": fuente,
+            "Origen": origen,
+            "Detalle": detalle, 
+        })
+    for ip in resumen["ataques"]:
+        agregar("ATAQUE_AUTOMATIZADO", "Windows", ip, "Rafaga de fallos en poco tiempo")
+    for ip in sorted(set(resumen["escaneos"])):
+        agregar("ESCANEO_PUERTOS",  "Firewall", ip, "Muchos puertos bloqueados en poco tiempo")
+    for ip in resumen["correlaciones"]:
+        agregar("POSIBLE_COMPROMISO", "Windows", ip, "Fallos seguidos de un acceso exitoso")
+    for ip in resumen["multifuente"]:
+        agregar("ATAQUE_MULTIFUENTE", "Windows + Firewall", ip, "Fallos de login y bloqueos del firewall")
+    for ip in est_web["ataques"]:
+        agregar("ATAQUE_AUTOMATIZADO_WEB", "Web", ip, "Fuerza bruta contra el login web")
+    for ip in est_web["correlaciones"]:
+        agregar("POSIBLE_COMPROMISO_WEB", "Web", ip, "Fallos seguidos de un acceso OK en el login web")
+    for ip, cantidad in est_web["enumeracion"].items():
+        agregar("ENUMERACION_USUARIOS", "Web", ip, f"{cantidad} usuarios inexistentes probados")
+    for correo in est_web["varios_dispositivos"]:
+        agregar("VARIOS_DISPOSITIVOS", "Web", correo, "Accesos OK desde dispositivos distintos")
+
+    # Ordena ALTO a INFORMATIVO como el mas bajo
+    orden = {"ALTO": 0, "MEDIO": 1, "INFORMATIVO": 2}
+    filas.sort(key=lambda f: orden.get(f["Severidad"], 1))
+    return filas 
+
+inicio_carga = time.perf_counter() # Cronometro para medi cuanto tarda en cargar
+logs_cvs, logs_fw, web, resumen, est_web = cargar_datos ()
 datos = logs_cvs + logs_fw
-resumen = calcular_estadisticas(datos)
+st.sidebar.caption(f"⏱️ Datos cargados en {(time.perf_counter() - inicio_carga) * 1000:.0f} ms")
 
 #Va a evitar que Streamlit guarde los eventos repetidamente
 #en cada interaccion
@@ -277,6 +348,42 @@ tab_detecciones,tab_chat, tab_explorer, tab_report, tab_informes = st.tabs([
 ])
 #pestaña de detecciones: muestra los resultados del analisis de logs reales
 with tab_detecciones:
+    st.subheader("Alertas detectadas")
+    detecciones = lista_detecciones(resumen, est_web)
+
+    # Contadores por severidad
+    colores_tarjeta = {
+        "ALTO": ("#d90429", "white"),
+        "MEDIO": ("#F59E0B", "black"),
+        "INFORMATIVO": ("#3B82F6", "white")
+    }
+    for columna, sev in zip(st.columns(3), ["ALTO", "MEDIO", "INFORMATIVO"]):
+        fondo, texto = colores_tarjeta[sev]
+        cantidad = sum(1 for d in detecciones if d["Severidad"] == sev)
+        columna.markdown(f"""
+        <div class="metric-card" style="background-color:{fondo}; color:{texto};">
+        <div style="font-size:0.85rem; font-weight:600;">{sev.capitalize()}</div>
+        <div style="font-size:1.8rem; font-wight:700;">{cantidad}</div>
+    </div>""", unsafe_allow_html=True)
+
+    # Tabla de alertas con la columna de severidad a colores 
+    if detecciones:
+        def color_severidad(valor):
+            fondo, texto = colores_tarjeta.get(valor, ("", ""))
+            return f"background-color:{fondo}; color: {texto}; font-weight: bold" if fondo else""
+
+        tabla_det = pd.DataFrame(detecciones).style.map(color_severidad, subset=["Severidad"])
+        st.dataframe(tabla_det, use_container_width=True, hide_index=True)
+    else:
+        st.success("No se detectaron amenazas.")
+    st.markdown("---")
+
+
+
+
+
+   
+
     st.subheader("IPs sospechosas")
     if resumen ["sospechosos"]:
         st.dataframe(
@@ -286,25 +393,7 @@ with tab_detecciones:
     else: 
         st.success("No hay IPs sospechosas")
 
-    st.subheader("Ataques automatizados")
-    if resumen["ataques"]:
-        for ip in resumen["ataques"]:
-            st.error(f"Ataque automatizado detectado desde {ip}")
-    else:
-        st.success("No se detectaron ataque automatizados")
-    st.subheader("Correlacion de eventos")
-    if resumen["correlaciones"]:
-        for ip in resumen["correlaciones"]:
-            st.error(f"Fallos seguidos de un acceso exitoso desde {ip}.Revisar si la cuenta fue comprometida")
-    else:
-        st.success("No se dectaron escaneos de puertos")
 
-    st.subheader("Ataques en varias capas")
-    if resumen["multifuente"]:
-        for ip in resumen["multifuente"]:
-            st.error(f" La IP {ip} tiene fallos de login y bloqueo del firewall en poco tiempo")
-    else:
-        st.success("No se detectaron ataques en varias capas")
 
     #Ranking de eventos mas frecuentes
     st.subheader("Eventos más frecuentes")
@@ -329,12 +418,15 @@ with tab_informes:
     st.subheader("Informe PDF del análisis")
     st.download_button(
         "Descargar informe (PDF)",
-        data=generar_informe_pdf(resumen),
+        data=pdf_cacheado(resumen),
         file_name="Informe_logs.pdf",
         mime="application/pdf",
         on_click=registrar_informe,
         args=(resumen,),
     )
+   
+    
+    
                        
     st.subheader("Historial de informes")
     informes = listar_informes()
@@ -412,63 +504,78 @@ with tab_chat:
                     st.error(err)
                     st.session_state.messages.append({"role": "assistant", "content": err})
 
-
-
-#EXPLORADOR DE LOGS
+# EXPLORADOR DE LOGS una sola tabla con todas las fuentes 
 with tab_explorer:
-    #Eventos reales: logs de windows y de firewall ya analizados
-    col_titulo, col_refresh = st.columns([12, 1])
-    with col_titulo:
-        st.markdown("##### Eventos analizados")
-    with col_refresh:
-        if st.button("🔄", help="Actualizar eventos"):
-            #Permite guardar los eventos nuevos y enviar sus alertas
-            del st.session_state["eventos_guardados"]
-            st.rerun()
-    ip_filtro = st.text_input("Filtrar por IP")
-    estados = st.multiselect("Estado", ["OK", "FAIL", "DENY"], default=["OK", "FAIL", "DENY"])
-    filas = filtrar_eventos(datos, ip_filtro, estados)
-    st.dataframe(filas, use_container_width=True)
-    st.caption(f"Mostrando {len(filas)} eventos")
+    col_titulo, col_refresh = st.columns([10, 2])
+    col_titulo.markdown("##### Todos los eventos")
+    if col_refresh.button("🔄 Actualizar", key="actualizar"):
+        st.cache_data.clear()                               # Borra la cache para leer datos nuevos
+        st.session_state.pop("eventos_guardados", None)     # Vuelve a enviar eventos y enviar alertas
+        st.rerun()
+
+    tabla = tabla_eventos()
+    c1, c2, c3, c4 = st.columns(4)
+    fuente = c1.selectbox("Fuente", ["Todas", "Windows", "Firewall", "Web"], key="f_fuente")
+    dispositivo = c2.selectbox("Dispositivo", ["Todos", "COMPUTADORA", "TELEFONO"], key="f_disp")
+    correos = sorted(c for c in tabla["Correo principal"].unique() if c)
+    correo = c3.selectbox("Correo principal", ["Todos"] + correos, key="f_correo")
+    estados = c4.multiselect("Estado", ["OK", "FAIL", "DENY"], default=["OK", "FAIL", "DENY"], key="f_estado")
+    ip_filtro = st.text_input("Filtar por IP", key="f_ip")
+
+    # Cada filtro deja solo las filas que coinciden 
+    if fuente != "Todas":
+        tabla = tabla[tabla["Fuente"] == fuente]
+    if dispositivo != "Todos":
+        tabla = tabla[tabla["Dispositivo"] == dispositivo]
+    if correo != "Todos":
+        tabla = tabla[tabla["Correo principal"] == correo]
+    tabla = tabla[tabla["Estado"].isin(estados)]
+    if ip_filtro:
+        tabla = tabla[tabla["IP"].str.contains(ip_filtro, regex=False)]
+
+    st.dataframe(tabla, use_container_width=True, hide_index=True)
+    st.caption(f"Mostrando {len(tabla)} eventos")
+
+    
    
    
  # Reporte SOC generado por Gemini con los resultados reales del del analisis
 with tab_report:
     st.markdown("#####  Exportar Reporte Ejecutivo del Incident Response")
-    st.button("Generar Reporte SOC con IA", type="primary")
-    #Resultados de las detecciones que se le pasan a la IA 
-    hallazgos = (
-        f"Total de eventos analizados: {resumen['total']}\n"
-        f"Eventos por estado: {resumen['por_estado']}\n"
-        f"IPs sospechosas (IP: Fallos): {resumen['sospechosos'] or 'ninguna'}\n"
-        f"Ataque automatizados: {resumen['ataques'] or 'ninguno'}\n"
-        f"Posibles escaneos de puertos: {resumen['escaneos'] or 'ninguno'}\n"
-        f"Fallos seguidos de acceso exitoso: {resumen['correlaciones'] or 'ninguno'}\n"
-        f"Ataques en varias capas: {resumen['multifuente'] or 'ninguno'}\n"
+    if st.button("Generar Reporte SOC con IA", type="primary"):
+        #Resultados de las detecciones que se le pasan a la IA 
+        hallazgos = (
+            f"Total de eventos analizados: {resumen['total']}\n"
+            f"Eventos por estado: {resumen['por_estado']}\n"
+            f"IPs sospechosas (IP: Fallos): {resumen['sospechosos'] or 'ninguna'}\n"
+            f"Ataque automatizados: {resumen['ataques'] or 'ninguno'}\n"
+            f"Posibles escaneos de puertos: {resumen['escaneos'] or 'ninguno'}\n"
+            f"Fallos seguidos de acceso exitoso: {resumen['correlaciones'] or 'ninguno'}\n"
+            f"Ataques en varias capas: {resumen['multifuente'] or 'ninguno'}\n"
 
-    )
-    pregunta = (
-        "Redacta un reporte ejecutivo de incidentes de ciberseguridad usando "
-        "SOLO estos resultados del análisis automático, sin inventar\n "
-        f"{hallazgos}\n "
-        "Incluye: resumen ejecutivo, hallazgos por IP, nivel de severidad "
-        "y acciones de mitigación recomendadas "
-        "No escribas un título principal, empieza directo con resumen ejecutivo "
-    )
-    with st.spinner("Generando reporte con Gemini..."):
-        try:
-            cuerpo = analizar_incidentes_con_gemini(pregunta)
-            fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            #Se guarda en la sesion para que no se pierda al descargar
-            st.session_state.reporte_ia = (
-                "# REPORTE DE INCIDENTES DE CIBERSEGURIDAD\n"
-                "**Organización:** Colmena Technologies - SOC \n\n"
-                f"**Fecha de emisión:** {fecha_actual} \n\n"
-                f"{cuerpo}"
-                )
-             
-        except Exception as e:
-            st.error(f"No se pudo generar el reporte: {e}")
+        )
+        pregunta = (
+            "Redacta un reporte ejecutivo de incidentes de ciberseguridad usando "
+            "SOLO estos resultados del análisis automático, sin inventar\n "
+            f"{hallazgos}\n "
+            "Incluye: resumen ejecutivo, hallazgos por IP, nivel de severidad "
+            "y acciones de mitigación recomendadas "
+            "No escribas un título principal, empieza directo con resumen ejecutivo "
+        )
+        with st.spinner("Generando reporte con Gemini..."):
+            try:
+                cuerpo = analizar_incidentes_con_gemini(pregunta)
+                fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                #Se guarda en la sesion para que no se pierda al descargar
+                st.session_state.reporte_ia = (
+                    "# REPORTE DE INCIDENTES DE CIBERSEGURIDAD\n"
+                    "**Organización:** Colmena Technologies - SOC \n\n"
+                    f"**Fecha de emisión:** {fecha_actual} \n\n"
+                    f"{cuerpo}"
+                    )
+                
+            except Exception as e:
+                st.error(f"No se pudo generar el reporte: {e}")
      #Muestra el ultimo reporte generado y permite descargarlo       
     if "reporte_ia" in st.session_state:
         st.markdown(st.session_state.reporte_ia)
@@ -478,59 +585,11 @@ with tab_report:
             file_name=f"Reporte_SOC_Colmena_{datetime.now().strftime('%Y%m%d')}.md",
         )
 
-# --------- Servidor WEB -------------
-web = leer_accesos_web()
-est_web = calcular_estadisticas(web)
 
-# Detecciones del servidor 
-with tab_detecciones:
-    st.markdown("---")
-    st.subheader("Servidor web")
-    if est_web["ataques"]:
-        for ip in est_web["ataques"]:
-            st.error(f"Fuerza bruta contra el login web desde {ip}")
-    else:
-        st.success("No hay fuerza bruta contra el login web.")
-    for ip in est_web["correlaciones"]:
-        st.error(f"Fallos seguidos de un acceso correcto en login web desde {ip}")
-    if est_web["enumeracion"]:
-        for ip, cantidad in est_web["enumeracion"].items():
-            st.warning(f"Enumeracion de usuarios desde {ip}: {cantidad} usuarios inexistentes")
-    else:
-        st.success("No se detecto enumeracion de usuarios")
-    if est_web["varios_dispositivos"]:
-        for correo in est_web["varios_dispositivos"]:
-                st.warning(f"La cuenta {correo} entro desde dispositivos distintos en poco tiempo")
-    else: 
-        st.success("No hay accesos desde varios dispositivos")
 
-# Tabla de accesos web con filtros
-with tab_explorer:
-    st.markdown("---")
-    st.markdown("##### Accesos al servidor web")
-    col_d, col_c = st.columns(2)
-    dispositivo = col_d.selectbox("Dispositivo", ["Todos", "COMPUTADORA", "TELEFONO"], key="filtro_dispositivo")
-    correos = sorted({r["correo_principal"] for r in web if r["correo_principal"]})
-    correo_elegido = col_c.selectbox("Correo principal", ["Todos"] + correos, key="filtro_correo")
 
-    filas_web = []
-    for r in web:
-        # salta los accesos que no coinciden con los filtros
-        if dispositivo != "Todos" and r["dispositivo"] != dispositivo:
-            continue
-        if correo_elegido != "Todos" and r["correo_principal"] != correo_elegido:
-            continue
-        filas_web.append({
-            "Fecha": r["tiempo"].strftime("%Y-%m-%d %H:%M: %S"),
-            "Usuario": r["usuario"],
-            "Correo principal": r["correo_principal"] or "",
-            "IP": r["ip"],
-            "Dispositivo": r["dispositivo"],
-            "Estado": r["estado"],
-            "Motivo": r["motivo"],
 
-        })
-    st.dataframe(filas_web, use_container_width=True)
-    st.caption(f"Mostrando {len(filas_web)} accesos")
+st.sidebar.caption(f"⏱️ Página completa en {(time.perf_counter() - inicio_pagina)* 1000:.0f}ms")
+
 
   

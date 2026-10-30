@@ -19,7 +19,8 @@ def exportar_eventos():
     resultado = subprocess.run(
         ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(RUTA_SCRIPT)],
         capture_output=True, #Guarda lo que imprime el script
-        text=True #Lo devuelve como texto no como bytes
+        text=True, #Lo devuelve como texto no como bytes
+        creationflags=subprocess.CREATE_NO_WINDOW, #Ejecuta PowerShell sin abrir la ventana
     )
     #Si salio bien devuelve el mensaje, si fallo devuelve el error
     return resultado.stdout.strip() or resultado.stderr.strip()
