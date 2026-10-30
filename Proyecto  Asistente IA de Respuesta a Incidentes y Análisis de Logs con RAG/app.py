@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import time
+import html
 from datetime import datetime
 from modulo2_rag import analizar_incidentes_con_gemini, collection
 from Ingest_modulo1 import (
@@ -30,10 +31,43 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/*--- Barra lateral--- */
+section[data-testid="stSidebar"] {
+background-color: #0B1220;
+border-right: 1px solid #263345;}
     /* Fondo principal y tipografía */
     .stApp {
-        background-color: #0b2545;
+        background-color: #0F172A;
         color: #E2E8F0;
+    }
+    .side-card {
+    background-color: #131D2E;
+    border: 1px solid #263345;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    }
+    .side-titulo {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #94A3B8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 8px 0 6px;
+    }
+    .side-usuario {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #E2E8F0;
+    margin: 2px 0 8px;
+    }
+    .badge-rol {
+    background: rgba(45, 212, 191, 0.12);
+    color: #2DD5BF;
+    border: 1px solid rgba(45, 212, 191, 0.35);
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
     }
 
     
@@ -126,6 +160,52 @@ st.markdown("""
         color: #38BDF8 !important;
         border-bottom: 2px solid #38BDF8;
     }
+    .stTaps [aria-selected="true"] {
+    background-color: #1E29RB ! important;
+    color: #38BDF8 ! important;
+    border-bottom: 2px solid #38BDF8;
+    }
+    /* --- Detecciones ---*/
+    .sev-card {
+    border: 1px solid #2A3A52;
+    border-radius: 10px;
+    pedding: 16px 18px;
+    text-align: center;
+    }
+    .sev-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #CBD5E1;
+    text-transform: upper case;
+    letter-spacing: 0.08em;
+    }
+    .sev-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    }
+    .sev-num {
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin-top: 4px;
+    }
+    .estado{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #94A3B8;
+    font-size: 0.95rem;
+    padding: 6px 2px;
+    }
+    /* Paneles de detecciones, mismo fondo borde y espaciado*/
+    div[class*=st-key-panel] {
+    background-color: #131D2E;
+    border: 1px solid #263345;
+    border-raidus: 12px;
+    padding: 18px 20px;
+    margin-bottom: 8px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -169,10 +249,16 @@ if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
 
 # Barra lateral
 with st.sidebar:
-    st.write(f"Sesion: {st.session_state.usuario}  ({st.session_state.rol})")
-    if st.button("Cerrar sesion"):
+    st.markdown(f"""
+    <div class="side-card">
+        <div class= "side-titulo">Sesión activa</div>
+        <div class= "side-usuario">{html.escape(st.session_state.usuario)}</div>
+        <span class="badge-rol">{html.escape(st.session_state.rol)}</span>
+    </div> """, unsafe_allow_html=True)
+    if st.button("Cerrar sesión", use_container_width=True):
         st.session_state.clear()
         st.rerun()
+    
 
 @st.cache_data(ttl=60, show_spinner="Cargando logs.....")
 def cargar_datos():
@@ -267,22 +353,32 @@ st.markdown("""
 
 
 with st.sidebar:
-    st.markdown("###  Control del Sistema")
-    st.markdown("---")
-    
-    st.markdown("#### 🟢 Estado del Pipeline")
-    st.markdown("• **VectorDB:** <span class='status-success'>ChromaDB Conectado</span>", unsafe_allow_html=True)
-    st.markdown("• **Modelo LLM:** <span class='status-info'>Gemini 2.5 / 2.0 Flash</span>", unsafe_allow_html=True)
-    st.markdown("• **Embeddings:** <span class='status-info'>API / Fallback ONNX</span>", unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.markdown("#### 🛠️ Opciones de Sesión")
-    if st.button("🗑️ Limpiar Historial de Chat", use_container_width=True):
+    # Revisa de verdad si ChromaDB responde, en vez de escribirlo fijo
+    try:
+        collection.count()
+        chroma_ok = True
+    except Exception:
+        chroma_ok = False
+    color_chroma = "#2DD4BF" if chroma_ok else "#F87171"
+    texto_chroma = "ChromaDB conectado" if chroma_ok else "#F87171"
+
+    st.markdown('<div class="side-titulo">Estado del sistema</div', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="side-card">
+        <div class="estado"><span class="sev-dot" style="background:{color_chroma};"></span>{texto_chroma}</div>
+        <div class="estado"><span class="sev-dot" style="background:#2DD4BF;"></span>Gemini 3.8 Flash</div>
+        <div class="estado"><span class="sev-dot" style="background:#2DD4BF;"></span>Embeddings: API / ONNX</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown('<div class="side-titulo">Opciones</div>', unsafe_allow_html=True)
+    if st.button("Limpiar historial del chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
-    st.markdown("---")
-    st.caption("🏢 **Colmena Technologies**\nPráctica Profesional: Ciberseguridad & IA")
+    st.caption("Colmena Technologies. Práctica profesional: Ciberseguridad & IA")
+
+
+    
 
 # --- PANEL SUPERIOR DE MÉTRICAS (KPIS INTUITIVOS) ---
 try:
@@ -339,79 +435,76 @@ with col_kpi4:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # --- PESTAÑAS PRINCIPALES ---
-tab_detecciones,tab_chat, tab_explorer, tab_report, tab_informes = st.tabs([
+tab_frecuentes,tab_detecciones,tab_chat, tab_explorer, tab_report, tab_informes = st.tabs([
+    "📊 Eventos frecuentes",
     "🚨 Detecciones",
     "💬 Asistente SOC & Triaje IA", 
     "📜 Explorador de Logs", 
     "📋 Generador de Reporte SOC",
     "📄 Informes",
 ])
+#Pestaña de eventos mas frecuentes: ranking de IPs, usuarios y puertos
+with tab_frecuentes:
+    with st.container(key="panel_eventos"):
+        st.subheader("Eventos mas frecuentes")
+        col_ips, col_usuarios, col_puertos = st.columns(3)
+        with col_ips:
+            st.markdown("**IPs**")
+            st.dataframe([{"IP": ip, "Eventos": n} for ip, n in resumen["ranking"] ["ips"]],
+                            use_container_width=True, hide_index=True)  
+        with col_usuarios:
+            st.markdown("**Usuarios**")
+            st.dataframe([{"Usuario": u, "Eventos": n} for u, n in resumen["ranking"] ["usuarios"]],
+                        use_container_width=True, hide_index=True) 
+        with col_puertos:
+            st.markdown("**Puertos del Firewall**")
+            st.dataframe([{"Puerto": p, "Eventos": n} for p, n in resumen["ranking"] ["puertos"]],
+                            use_container_width=True, hide_index=True)
+
 #pestaña de detecciones: muestra los resultados del analisis de logs reales
 with tab_detecciones:
-    st.subheader("Alertas detectadas")
     detecciones = lista_detecciones(resumen, est_web)
-
-    # Contadores por severidad
-    colores_tarjeta = {
-        "ALTO": ("#d90429", "white"),
-        "MEDIO": ("#F59E0B", "black"),
-        "INFORMATIVO": ("#3B82F6", "white")
+    # color de cada severidad:solo indicadores pequeños
+    colores_sev = {"ALTO": "#F87171", "MEDIO": "#FBBF24", "INFORMATIVO": "#2DD4BF"}
+    # Fondo pastel
+    fondos_sev = {
+        "ALTO": "rgba(248, 113, 0.12)",
+        "MEDIO": "rgba(251, 191, 36, 0.12)",
+        "INFORMATIVO": "rgba(45, 112, 191, 0.12)",
     }
-    for columna, sev in zip(st.columns(3), ["ALTO", "MEDIO", "INFORMATIVO"]):
-        fondo, texto = colores_tarjeta[sev]
-        cantidad = sum(1 for d in detecciones if d["Severidad"] == sev)
-        columna.markdown(f"""
-        <div class="metric-card" style="background-color:{fondo}; color:{texto};">
-        <div style="font-size:0.85rem; font-weight:600;">{sev.capitalize()}</div>
-        <div style="font-size:1.8rem; font-wight:700;">{cantidad}</div>
-    </div>""", unsafe_allow_html=True)
 
-    # Tabla de alertas con la columna de severidad a colores 
-    if detecciones:
-        def color_severidad(valor):
-            fondo, texto = colores_tarjeta.get(valor, ("", ""))
-            return f"background-color:{fondo}; color: {texto}; font-weight: bold" if fondo else""
+    # Alertas detectadas
+    with st.container(key="panel_alertas"):
+        st.subheader("Alertas detectadas")
+        for columna, sev in zip(st.columns(3), ["ALTO", "MEDIO", "INFORMATIVO"]):
+            cantidad = sum(1 for d in detecciones if d["Severidad"] == sev)
+            columna.markdown(f"""
+            <div class="sev-card" style="background:{fondos_sev}; border-color:{colores_sev[sev]}55;">
+                <div class="sev-label">{sev.capitalize()}</div>
+                <div class="sev-num" style="color:{colores_sev[sev]};">{cantidad}</div>
+            </div>""", unsafe_allow_html=True)
 
-        tabla_det = pd.DataFrame(detecciones).style.map(color_severidad, subset=["Severidad"])
-        st.dataframe(tabla_det, use_container_width=True, hide_index=True)
-    else:
-        st.success("No se detectaron amenazas.")
-    st.markdown("---")
+        st.write("") # Espacio entre las tarjetas y la tabla
+        if detecciones:
+            def color_severidad(valor):
+                #solo colorea el texto de la severidad
+                color = colores_sev.get(valor)
+                return f"color: {color}; font-weight:600" if color else ""
 
-
-
-
-
-   
-
-    st.subheader("IPs sospechosas")
-    if resumen ["sospechosos"]:
-        st.dataframe(
-            [{"IP": ip, "Fallos": n} for ip, n in resumen["sospechosos"].items()],
-            use_container_width=True
-        )
-    else: 
-        st.success("No hay IPs sospechosas")
-
-
-
-    #Ranking de eventos mas frecuentes
-    st.subheader("Eventos más frecuentes")
-    col_ips, col_usuarios, col_puertos = st.columns(3)
-    with col_ips:
-        st.markdown("**IPs**")
-        st.dataframe([{"IP": ip, "Eventos": n} for ip, n in resumen["ranking"]["ips"]],
-                     use_container_width=True, hide_index=True)
-    with col_usuarios:
-        st.markdown("**Usuarios**")
-        st.dataframe([{"Usuario": u, "Eventos": n} for u, n in resumen["ranking"]["usuarios"]],
-                     use_container_width=True, hide_index=True)
-    with col_puertos:
-        st.markdown("**Puertos del Firewall**")
-        st.dataframe([{"Puerto": p, "Eventos": n} for p, n in resumen["ranking"]["puertos"]],
-                     use_container_width=True, hide_index=True)
-        
-
+            tabla_det = pd.DataFrame(detecciones).style.map(color_severidad, subset=["Severidad"])
+            st.dataframe(tabla_det, use_container_width=True, hide_index=True)
+        else:
+            st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF";></span>No se detectaron amenazas</div>', unsafe_allow_html=True)
+    # IPs sospechosas
+    with st.container(key="panel_ips"):
+        st.subheader("IPs sospechosas")
+        if resumen["sospechosos"]:
+            st.dataframe(
+                [{"IP": ip, "Fallos": n} for ip, n in resumen["sospechosos"].items()],
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF;"></span>No hay IPs sospechosas</div>', unsafe_allow_html=True)
 
 #Pestaña de informes:descarga del PDF y el historial guardado
 with tab_informes:
@@ -508,7 +601,7 @@ with tab_chat:
 with tab_explorer:
     col_titulo, col_refresh = st.columns([10, 2])
     col_titulo.markdown("##### Todos los eventos")
-    if col_refresh.button("🔄 Actualizar", key="actualizar"):
+    if col_refresh.button("🔄", key="actualizar"):
         st.cache_data.clear()                               # Borra la cache para leer datos nuevos
         st.session_state.pop("eventos_guardados", None)     # Vuelve a enviar eventos y enviar alertas
         st.rerun()
@@ -519,7 +612,7 @@ with tab_explorer:
     dispositivo = c2.selectbox("Dispositivo", ["Todos", "COMPUTADORA", "TELEFONO"], key="f_disp")
     correos = sorted(c for c in tabla["Correo principal"].unique() if c)
     correo = c3.selectbox("Correo principal", ["Todos"] + correos, key="f_correo")
-    estados = c4.multiselect("Estado", ["OK", "FAIL", "DENY"], default=["OK", "FAIL", "DENY"], key="f_estado")
+    estados = c4._multiselect("Estado", ["OK", "FAIL", "DENY"], default=["OK", "FAIL", "DENY"], key="f_estado")
     ip_filtro = st.text_input("Filtar por IP", key="f_ip")
 
     # Cada filtro deja solo las filas que coinciden 
@@ -585,11 +678,4 @@ with tab_report:
             file_name=f"Reporte_SOC_Colmena_{datetime.now().strftime('%Y%m%d')}.md",
         )
 
-
-
-
-
 st.sidebar.caption(f"⏱️ Página completa en {(time.perf_counter() - inicio_pagina)* 1000:.0f}ms")
-
-
-  
