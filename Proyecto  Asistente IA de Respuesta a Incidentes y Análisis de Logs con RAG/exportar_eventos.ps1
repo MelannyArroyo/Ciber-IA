@@ -32,5 +32,14 @@ if ($filas) {
 } else {
     Write-Output "No se encontraron eventos, no se cambio el archivo"
 }
+# Copia del log del firewall de windows
+$origenFw = "$env:SystemRoot\System32\LogFiles\Firewall\pfirewall.log"
+$destinoFW = "$PSScriptRoot\..\archivos_logs\pfirewall.log"
 
+if(Test-Path $origenFw) {
+    Copy-Item $origenFw $destinoFw -Force
+    Write-Output "Firewall copiado"
+} else {
+    Write-Output "No se encontro el log del firewall"
+}
     

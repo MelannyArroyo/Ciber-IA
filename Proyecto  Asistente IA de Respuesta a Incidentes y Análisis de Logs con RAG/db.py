@@ -2,6 +2,9 @@ import os
 import sqlite3
 from datetime import datetime
 
+DIAS_RETENCION = 90 # Dias que se guardan los eventos antes de borrarlos
+
+
 RUTA_DB= os.path.join(os.path.dirname(os.path.abspath(__file__)), "soc.db")
 #Abre la base como abrir un archivo de excel antes de escribir en el 
 def conectar(): 
@@ -236,7 +239,28 @@ def leer_accesos_web():
             "dispositivo": fila["dispositivo"],
             "motivo": fila["motivo"],
         })
-    return registros
+    return registros 
+
+
+def limpiar_registros_antiguos(dias=DIAS_RETENCION):
+    """Borra eventos y accesos web mas viejos que 'dias' para que la base no crezca sin limite"""
+    limite = f"-{dias} days"
+    with conectar() as con:
+        eventos = con.execute(
+            "DELETE FROM eventos WHERE tiempo <> '' AND tiempo < datetime('now', 'localtime', ?)",
+            (limite,),
+        ).rowcount
+        accesos = con.execute(
+            "DELETE FROM accesos_web WHERE tiempo <> '' AND tiempo < datetime('now', 'localtime', ?)",
+            (limite,),
+        ).rowcount
+
+    borrados = eventos + accesos
+    if borrados:
+        with conectar() as con:
+            con.execute("VACUUM") # Recupera el espacio que dejaron los registros borrados
+    return borrados
+    
 if __name__ == "__main__":
     crear_tablas()
     print("Base lista en:", RUTA_DB)
