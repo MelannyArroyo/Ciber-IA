@@ -322,6 +322,8 @@ def lista_detecciones(resumen, est_web):
         agregar("ENUMERACION_USUARIOS", "Web", ip, f"{cantidad} usuarios inexistentes probados")
     for correo in est_web["varios_dispositivos"]:
         agregar("VARIOS_DISPOSITIVOS", "Web", correo, "Accesos OK desde dispositivos distintos")
+    for usuario in est_web["bloqueos"]:
+        agregar ("CUENTA_BLOQUEADA", "Web", usuario, "Cuenta bloqueada por varios intentos fallidos")
 
     # Ordena ALTO a INFORMATIVO como el mas bajo
     orden = {"ALTO": 0, "MEDIO": 1, "INFORMATIVO": 2}

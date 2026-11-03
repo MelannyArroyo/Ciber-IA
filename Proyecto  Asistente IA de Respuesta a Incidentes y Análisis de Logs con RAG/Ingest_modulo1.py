@@ -334,6 +334,10 @@ def detectar_anomalias_horarias(registros, factor=1.5):
 
     if len(conteo) < 2:
         return []
+
+def detectar_bloqueos(registros):
+    """Cuentas que fueron bloqueadas por demasiados intentos fallidos"""
+    return sorted({r["usuario"] for r in registros if r.get("motivo") == "CUENTA_BLOQUEADA"})
  #Calcula la media y desviacion de los conteos
     valores = list(conteo.values())
     limite = statistics.mean(valores) + factor * statistics.pstdev(valores)
@@ -365,6 +369,7 @@ def calcular_estadisticas(registros):
         "ranking": ranking_eventos(registros),
         "enumeracion": detectar_enumeracion(registros),
         "varios_dispositivos": detectar_varios_dispositivos(registros),
+        "bloqueos": detectar_bloqueos(registros),
 
     }  
 
@@ -433,6 +438,8 @@ def guardar_en_db(logs_csv, logs_fw):
         guardar_alerta_unica("ENUMERACION_USUARIOS", ip, f"{cantidad} usuarios inexsistentes probados")
     for correo in est_web["varios_dispositivos"]:
         guardar_alerta_unica("VARIOS_DISPOSITIVOS", correo, "Acceos OK desde dispositivos distintos en poco tiempo")
+    for usuario in est_web["bloqueos"]:
+        guardar_alerta_unica("CUENTA_BLOQUEADA", usuario, "Cuenta bloqueada por varios intentos fallidos")
     return nuevos
 
    
