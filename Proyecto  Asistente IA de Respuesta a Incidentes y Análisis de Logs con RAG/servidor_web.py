@@ -1,10 +1,12 @@
 from flask import Flask, request, render_template_string
 import bcrypt
-from db import crear_tablas, crear_cuenta_web, guardar_acceso_web, buscar_cuenta_web
+from db import crear_tablas, crear_cuenta_web, guardar_acceso_web, buscar_cuenta_web, fallos_recientes
 
 app = Flask(__name__)
 # es para que un usuario inexistente tarde lo mismo que uno real evita los ataque de tiempo
 HASH_FALSO = bcrypt.hashpw(b" clave_que_no_se_usa", bcrypt.gensalt())
+INTENTOS_MAXIMOS = 5 # Contraseñas incorrectas antes de bloquear la cuenta
+MINUTOS_BLOQUEO = 5 # Minutos que se revisan hacia atras es la duracion del bloqueo
 crear_tablas()  # Crea tablas nuevas si no existen 
 
 #Formulario HTML que sirve para registro y para login
@@ -55,13 +57,17 @@ def login():
 
         cuenta = buscar_cuenta_web(usuario)
         if cuenta is None:
-            bcrypt.checkpw(clave.encode("utf-8"), HASH_FALSO) # Gasta el mismo que uno de cuenta real 
+            bcrypt.checkpw(clave.encode("utf-8"), HASH_FALSO)# Es el mismo tiempo que la cuenta real
             estado, motivo, correo = "FAIL", "USUARIO_NO_EXISTE", None
+        elif fallos_recientes(usuario, MINUTOS_BLOQUEO) >= INTENTOS_MAXIMOS:
+            # Cuenta bloqueada ni si quiera se revisa la contraseña
+            bcrypt.checkpw(clave.encode("utf-8"), HASH_FALSO) #Mismo tiempo de respuesta
+            estado, motivo, correo = "FAIL", "CUENTA_BLOQUEADA", cuenta["correo_principal"]
         elif bcrypt.checkpw(clave.encode("utf-8"), cuenta["clave_hash"]):
             estado, motivo, correo = "OK", "", cuenta["correo_principal"]
         else:
             estado, motivo, correo = "FAIL", "CLAVE_INCORRECTA", cuenta["correo_principal"]
-
+      
         #Guarda el intento SIN la contraseña
         guardar_acceso_web(usuario, correo, ip, dispositivo, agente, estado, motivo)
         print(f"Login {estado} | {usuario} | {correo} | {ip} | {dispositivo} | {motivo}")

@@ -260,6 +260,17 @@ def limpiar_registros_antiguos(dias=DIAS_RETENCION):
         with conectar() as con:
             con.execute("VACUUM") # Recupera el espacio que dejaron los registros borrados
     return borrados
+def fallos_recientes(usuario, minutos):
+    """Cuenta las contraseñas incorrectas de un usuario en los ultimos minutos"""
+    limite = f"-{minutos} minutes"
+    with conectar() as con:
+        # Count cuenta las filas que cumplen la condicion 
+        return con.execute(
+            "SELECT COUNT (*) FROM accesos_web WHERE usuario = ? And motivo = 'CLAVE_INCORRECTA' "
+            "AND tiempo >= datetime('now', 'localtime', ?)",
+            (usuario, limite),
+        ).fetchone()[0] #devuelve la fila con solo dato y lo saca
+
     
 if __name__ == "__main__":
     crear_tablas()
