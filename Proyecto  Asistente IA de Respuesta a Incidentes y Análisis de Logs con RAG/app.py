@@ -12,6 +12,7 @@ from Ingest_modulo1 import (
     guardar_en_db,
     ruta_archivo,
     ruta_firewall,
+    niveles_de_riesgo
     
 )
 from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
@@ -250,12 +251,12 @@ if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
 # Barra lateral
 with st.sidebar:
     st.markdown(f"""
-    <div class="side-card">
+    <div class="side-card">     
         <div class= "side-titulo">Sesión activa</div>
         <div class= "side-usuario">{html.escape(st.session_state.usuario)}</div>
         <span class="badge-rol">{html.escape(st.session_state.rol)}</span>
     </div> """, unsafe_allow_html=True)
-    if st.button("Cerrar sesión", use_container_width=True):
+    if st.button("Cerrar sesión", use_container_width=True): 
         st.session_state.clear()
         st.rerun()
     
@@ -387,13 +388,20 @@ try:
     total_logs_count = collection.count()
 except Exception:
     total_logs_count = 4
-amenazas = (len(resumen["ataques"]) + len(resumen["escaneos"])
-            + len(resumen["correlaciones"]) + len(resumen["multifuente"]))
-nivel = "ALTO" if amenazas else "BAJO"
-clase_nivel = "status-critical" if amenazas else "status-success"
-#La IP con mas fallos es la primera de sospechosos
-ip_top = next(iter(resumen["sospechosos"]), "Ninguna")
-fallos_top = resumen["sospechosos"].get(ip_top, 0)
+# Van a usar la misma lista que la pestaña de detecciones
+detecciones = lista_detecciones(resumen, est_web)
+riesgos = niveles_de_riesgo(detecciones)
+amenazas = len(detecciones)
+severidades = {d["Severidad"] for d in detecciones}
+if "ALTO" in severidades:
+    nivel, clase_nivel = "ALTO", "status-critical"
+elif "MEDIO" in severidades:
+    nivel, clase_nivel = "MEDIO", "status-warning"
+else:
+    nivel, clase_nivel = "BAJO", "status-success"
+# El primero es el mayor nivel de riesgo
+ip_top = riesgos[0]["Origen"] if riesgos else "Ninguno"
+nivel_top = riesgos[0]["Nivel de riesgo"] if riesgos else "Sin riesgo"
 
 
 col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
@@ -419,9 +427,9 @@ with col_kpi2:
 with col_kpi3:
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-title">IP Origen Sospechosa</div>
+        <div class="metric-title"> Origen de mayor riesgo</div>
         <div class="metric-value  status-warning">{ip_top}</div>
-        <div style="font-size:0.75rem; color:#F59E0B;">{fallos_top} intentos fallidos</div>
+        <div style="font-size:0.75rem; color:#F59E0B;">{nivel_top}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -465,7 +473,6 @@ with tab_frecuentes:
 
 #pestaña de detecciones: muestra los resultados del analisis de logs reales
 with tab_detecciones:
-    detecciones = lista_detecciones(resumen, est_web)
     # color de cada severidad:solo indicadores pequeños
     colores_sev = {"ALTO": "#F87171", "MEDIO": "#FBBF24", "INFORMATIVO": "#2DD4BF"}
     # Fondo pastel
@@ -497,16 +504,27 @@ with tab_detecciones:
             st.dataframe(tabla_det, use_container_width=True, hide_index=True)
         else:
             st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF";></span>No se detectaron amenazas</div>', unsafe_allow_html=True)
-    # IPs sospechosas
-    with st.container(key="panel_ips"):
-        st.subheader("IPs sospechosas")
-        if resumen["sospechosos"]:
-            st.dataframe(
-                [{"IP": ip, "Fallos": n} for ip, n in resumen["sospechosos"].items()],
-                use_container_width=True, hide_index=True,
-            )
+
+    # Nivel de riesgo por origen
+    with st.container(key="panel_riesgo"):
+        st.subheader("Nivel de riesgo por origen")
+        riesgos = niveles_de_riesgo(detecciones)
+        if riesgos:
+            colores_riesgo = {"CRITICO": "#F87171", "ALTO": "#FB923C", "MEDIO":"#FBBF24", "BAJO": "#2DD4BF"}
+
+            def color_riesgo(valor):
+                color = colores_riesgo.get(valor)
+                return f"color: {color}; font-weight: 600" if color else ""
+
+            tabla_riesgo = pd.DataFrame(riesgos).style.map(color_riesgo, subset=["Nivel de riesgo"])
+            st.dataframe(tabla_riesgo, use_container_width=True, hide_index=True)
         else:
-            st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF;"></span>No hay IPs sospechosas</div>', unsafe_allow_html=True)
+            st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF;></span>Sin origenes de riesgo</div', unsafe_allow_html=True)
+
+        
+
+    
+    
 
 #Pestaña de informes:descarga del PDF y el historial guardado
 with tab_informes:

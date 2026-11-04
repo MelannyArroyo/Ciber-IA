@@ -14,6 +14,7 @@ from Ingest_modulo1 import (
     es_cuenta_de_sistema,
     detectar_enumeracion,
     detectar_varios_dispositivos,
+    niveles_de_riesgo,
     
 )
 BASE = datetime(2026, 10, 16, 10, 0, 0)#Hora de inicio fija para que las pruebas den siempre el mismo resultado
@@ -137,6 +138,44 @@ def test_varios_dispositivos_detectado():
           "correo_principal": "ana@correo.com", "dispositivo": "TELEFONO"},
     ]
     assert detectar_varios_dispositivos(registros) == ["ana@correo.com"]
+
+def test_respuesta_dns_no_es_escaneo():
+    registros = [
+        {**evento("167.250.221.254", "DENY", i, usuario="firewall", puerto=str(50000 + i)),
+            "puerto_origen": "53", "protocolo": "UDP"}
+            for i in range(12)
+    ]
+    assert detectar_escaneos(registros) == []
+
+def test_escaneo_desde_puerto_53_si_se_detecta():
+    # si un atacante usa ese puerto desde una IP que no es de DNS
+    registros = [
+        {**evento("203.0.113.50", "DENY", i, usuario="firewall", puerto=str(20 + i)),
+         "puerto_origen": "53", "protocolo": "UDP"}
+         for i in range(12)
+    ]
+    assert detectar_escaneos(registros) == ["203.0.113.50"]
+
+#Comprueba que una IP con un ataque alto y otro distinto sube a critico 
+def test_riesgo_sube_con_varios_ataques():
+    detecciones = [
+        {"Origen": "10.0.0.1", "Severidad": "ALTO", "Tipo": "POSIBLE_COMPROMISO_WEB"},
+        {"Origen": "10.0.0.1", "Severidad": "INFORMATIVO", "Tipo": "ENUMERACION_USUARIOS"},
+    ]
+    assert niveles_de_riesgo(detecciones)[0]["Nivel de riesgo"] == "CRITICO"
+    
+# Comprueba que salgan todos los origenes de los mas critico a lo mas leve
+def test_riesgo_incluye_todos_los_origenes():
+    detecciones = [
+        {"Origen": "10.0.0.1", "Severidad": "ALTO", "Tipo": "POSIBLE_COMPROMISO_WEB"},
+        {"Origen": "10.0.0.2", "Severidad": "MEDIO", "Tipo": "ESCANEO_PUERTOS"},
+        {"Origen": "10.0.0.3", "Severidad": "INFORMATIVO", "Tipo": "ENUMERACION_USUARIOS"}
+    ]
+    niveles = [f["Nivel de riesgo"] for f in niveles_de_riesgo(detecciones)]
+    assert niveles == ["ALTO", "MEDIO", "BAJO"]
+
+
+
 
 
 

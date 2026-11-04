@@ -38,6 +38,8 @@ CUENTAS_SISTEMA = {"SYSTEM", "SISTEMA", "LOCAL SERVICE", "SERVICIO LOCAL",
 IPs_LOCALES = {"-", "::1", "127.0.0.1"}
 #Cuentas virtuales que windows crea en cada inicio de sesion(DWM-1,UMFD-0, etc.)
 PREFIJOS_SISTEMA = ("DWM-", "UMFD-")
+#Servidores DNS de la red, sus respuestas tardias no son escaneos
+SERVIDORES_DNS = {"167.250.221.254", "181.178.28.254"}
 
 def es_cuenta_de_sistema(usuario):
     """True si el usuario es una cuenta de servicio de windows o equipo"""
@@ -155,6 +157,12 @@ def es_trafico_de_ruido(ip_origen, ip_destino):
     if destino.version == 4 and ip_destino.endswith(".255"):
         return True
     return False
+
+def es_respuesta_dns(r):
+    """Respuesta de un servidor DNS conocido vuene del puerto 53 por UDP"""
+    return(r.get("ip") in SERVIDORES_DNS
+            and r.get("puerto_origen") == "53"
+            and r.get("protocolo") == "UDP")
     
 #convierte una linea de pfirewall.log en un registro
 #Traduce ALLOW a OK Y DROP a DENY para usar los mismos estados de inicio de sesion
@@ -165,6 +173,7 @@ def interpretar_linea(linea):
     fecha,hora,accion,protocolo, ip = partes [:5]
     puerto = partes[7] if len(partes) > 7 and partes[7].isdigit() else None 
     ip_destino = partes[5] if len(partes) > 5 else ""
+    puerto_origen = partes[6] if len(partes) > 6 else ""
     if es_trafico_de_ruido(ip, ip_destino):
         return None
 
@@ -177,7 +186,7 @@ def interpretar_linea(linea):
     tiempo = leer_fecha(f"{fecha} {hora}")
 
     
-    return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo, "puerto":puerto, "original":linea.strip()}
+    return{"ip":ip, "usuario": "firewall", "estado": estado, "tiempo": tiempo, "puerto":puerto, "original":linea.strip(), "protocolo": protocolo, "puerto_origen": puerto_origen,}
 
 #salta las lineas del encabezado del log
 #lee pfirewall.log linea por linea
@@ -205,7 +214,7 @@ def detectar_escaneos(registros, umbral=PUERTOS_EN_VENTANA, ventana=VENTANA_SEGU
     """Va a marcar IPs que bloqueadas tocan muchos puertos dsitintos en poco tiempo"""
     eventos = {}
     for r in registros:
-        if r.get("puerto") and r["tiempo"] and r["estado"] == "DENY":
+        if r.get("puerto") and r["tiempo"] and r["estado"] == "DENY" and not es_respuesta_dns(r):
             eventos.setdefault(r["ip"], []).append((r["tiempo"], r["puerto"]))
     escaneos= []
     for ip, lista in eventos.items():
@@ -443,9 +452,32 @@ def guardar_en_db(logs_csv, logs_fw):
     return nuevos
 
    
+NIVELES_RIESGO = ["BAJO", "MEDIO", "ALTO", "CRITICO"] # De menor a mayor
+NIVEL_POR_SEVERIDAD = {"INFORMATIVO": "BAJO", "MEDIO":"MEDIO", "ALTO":"ALTO"}
 
-        
- 
+def niveles_de_riesgo(detecciones):
+    """Nivel de riesgo por origen su deteccion mas grave y sube  un nivel si combina varios ataques"""
+    por_origen = {}
+    for d in detecciones:
+        por_origen.setdefault(d["Origen"], []).append(d)
+
+    filas = []
+    for origen, lista in por_origen.items():
+        # El nivel de la deteccion mas grave
+        nivel = max(NIVELES_RIESGO.index(NIVEL_POR_SEVERIDAD.get(d["Severidad"], "MEDIO")) for d in lista)
+        # Hizo 2 o mas tipos de ataques distintos, sube un nivel
+        tipos = sorted({d["Tipo"] for d in lista})
+        if len(tipos)>= 2:
+            nivel = min(nivel + 1, len(NIVELES_RIESGO) - 1)
+        filas.append({
+            "Origen": origen,
+            "Nivel de riesgo": NIVELES_RIESGO[nivel],
+            "Tipos de ataque": len(tipos),
+            "Detecciones": " , ".join(tipos),
+        })
+    # Lo mas peligroso primero
+    filas.sort(key=lambda f: NIVELES_RIESGO.index(f["Nivel de riesgo"]), reverse=True)
+    return filas 
 
 #Solo va a correr si ejecuta este archivo directamente
 if __name__ == "__main__":
@@ -482,8 +514,7 @@ if __name__ == "__main__":
 
 
     print(f"\n    INGESTA FINALIZADA CON EXITO: {len(datos)}  registros procesados   ")
-   
-   
+
 
     
     
