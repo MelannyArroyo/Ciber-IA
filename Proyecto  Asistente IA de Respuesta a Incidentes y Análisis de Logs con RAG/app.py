@@ -203,7 +203,7 @@ border-right: 1px solid #263345;}
     div[class*=st-key-panel] {
     background-color: #131D2E;
     border: 1px solid #263345;
-    border-raidus: 12px;
+    border-radius: 12px;
     padding: 18px 20px;
     margin-bottom: 8px;
     }
@@ -214,21 +214,51 @@ border-right: 1px solid #263345;}
 crear_tablas()
 if "rol" not in st.session_state:
     st.session_state.rol = None
+
+# Reglas de incio de sesion
+MINUTOS_INACTIVIDAD = 30
+HORAS_MAXIMAS = 8
+MINUTOS_AVISO = 2
+
+def motivo_de_cierre(ahora):
+    """Devuelve porque se debe cerrar la sesion, o None si sigue activa"""
+    if ahora - st.session_state.get("inicio_sesion", ahora) > HORAS_MAXIMAS * 3600: # segundos de una hora
+        return "Tu sesión llegó a su duración máxima de 8 horas. Vuelve a iniciar sesión."
+    if ahora - st.session_state.get("ultima_actividad", ahora) > MINUTOS_INACTIVIDAD * 60:
+        return "Tu sesión se cerró por inactividad. Vuelve a iniciar sesión."
+    return None
+
+if st.session_state.rol:
+    motivo = motivo_de_cierre(time.time())
+    if motivo:
+        st.session_state.clear()
+        st.session_state.rol = None
+        st.session_state.aviso = motivo
+    else:
+        st.session_state.ultima_actividad = time.time() # Cualquier clic cuenta como actividad
+
 #Inicio de sesion
 if st.session_state.rol is None:
     st.title("Iniciar Sesion")
+    if st.session_state.get("aviso"):
+        st.warning(st.session_state.pop("aviso")) # Aviso de  sesion cerrada, una sola vez
     with st.form("login"):
         usuario = st.text_input("Usuario")
         contrasena = st.text_input("Contraseña", type="password")
         entrar = st.form_submit_button("Entrar")
     if entrar:
-        rol = verificar_usuario(usuario, contrasena)
+        # IP y navegador de quien intenta entrar es para el registro de intentos
+        ip = getattr(st.context, "ip_address", None) or "LOCAL"
+        agente = st.context.headers.get("User-Agent", "")
+        rol = verificar_usuario(usuario, contrasena, ip, agente)
         if rol:
             st.session_state.rol = rol
             st.session_state.usuario = usuario
+            st.session_state.inicio_sesion = time.time()
+            st.session_state.ultima_actividad = time.time ()
             st.rerun()
         else:
-            st.error("Usuario o contraseña Incorrectos")
+            st.error("Usuario o contraseña incorrectos")
     st.stop()
 
     #Administrar usuarios
@@ -358,6 +388,24 @@ st.markdown("""
     <div class="soc-subtitle">Plataforma Inteligente de Análisis de Logs y Triaje de Incidentes asistida por RAG & Gemini AI</div>
 </div>
 """, unsafe_allow_html=True)
+
+@st.fragment(run_every=30)
+def vigilar_sesion():
+    """Cada 30 segundos revisa si la sesion esta por cerrarse y avisa"""
+    ahora = time.time()
+    if motivo_de_cierre(ahora):
+        st.rerun() # Recarga  toda la app para cerrar sesion
+    restante_total = HORAS_MAXIMAS * 3600 - (ahora - st.session_state.inicio_sesion)
+    restante_inactividad = MINUTOS_INACTIVIDAD * 60 - (ahora - st.session_state.ultima_actividad)
+    if restante_total <= MINUTOS_AVISO * 60:
+        st.warning("Tu sesion se cerrará en menos de 2 minutos llegó a la duración máxima. Guarda tu trabajo")
+    elif restante_inactividad <= MINUTOS_AVISO * 60:
+        st.warning("Tu sesion se cerrará en menos de 2 minutos por inactividad")
+        if st.button("Seguir en la sesión", key="seguir_sesion"):
+            st.session_state.ultima_actividad = time.time()
+            st.rerun() # recarga la app y quita el aviso
+vigilar_sesion()
+
 
 
 with st.sidebar:
