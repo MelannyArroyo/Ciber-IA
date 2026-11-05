@@ -37,22 +37,22 @@ envia alertas por correo y permite consultar los eventos con un asistente de IA.
 - Programador de tareas de Windows (vigilancia automática)
 
 ## Estructura del proyecto 
-│Archivo │ Función │
-│---│---│
-│`app.py`│ Interfaz web y flujo principal │
-│`Ingest_modulo1.py`│ Lectura de logs y detecciones │
-│`modulo2_rag.py `│ Busqueda en ChromaDB y respuestas con Gemini │
-│`db.py`│ Tablas y consultas de la base de datos │
-│`auth.py`│ Registro e inicio de sesión y roles │
-│`backend_logs.py`│ Informe PDF y filtros de eventos │
-│`notificaciones`│ Envío de alertas por correo │
-│`prueba_detecciones.py` │ Pruebas de las detecciones │
-│`vigilancia.py` │ Vigilancia automática cada 30 minutos │
-│`exportar_eventos.ps1` │ Exporta eventos de Windows y copia el log del firewall │
-│`servidor_web.py` │ Servidor web de peruebas con registro e inicio de sesión  │
-│`simular_ataque.py` │ Simula ataques controlados contra el servidor de pruebas │
-│`medir_tiempo.py` │ Mide el tiempo de respuesta del login (ataque de tiempo) │
-│`.streamlit/config.toml` │ Tema visual de la aplicación │
+|Archivo | Función |
+|---|---|
+|`app.py`| Interfaz web y flujo principal |
+|`Ingest_modulo1.py`|Lectura de logs y detecciones |
+|`modulo2_rag.py `| Busqueda en ChromaDB y respuestas con Gemini |
+|`db.py`| Tablas y consultas de la base de datos |
+|`auth.py`| Registro e inicio de sesión y roles |
+|`backend_logs.py`| Informe PDF y filtros de eventos |
+|`notificaciones.py`| Envío de alertas por correo |
+|`prueba_detecciones.py` | Pruebas de las detecciones |
+|`vigilancia.py` | Vigilancia automática cada 30 minutos |
+|`exportar_eventos.ps1` | Exporta eventos de Windows y copia el log del firewall |
+|`servidor_web.py` | Servidor web de pruebas con registro e inicio de sesión  |
+|`simular_ataque.py` | Simula ataques controlados contra el servidor de pruebas |
+|`medir_tiempo.py`|Mide el tiempo de respuesta del login (ataque de tiempo) |
+|`.streamlit/config.toml`| Tema visual de la aplicación |
 
 
 ## Instalación 
