@@ -71,10 +71,16 @@ def crear_tablas(): #escribe en el lenguaje SQL, las cuatro tablas cada una es c
             dispositivo TEXT,
             user_agent TEXT,
             estado TEXT, 
-            motivo TEXT
+            motivo TEXT,
+            sistema TEXT DEFAULT 'WEB'
             );
 
         """)
+        # Si la tabla ya existia, no le agrega columnas se agrega en esta funcion 
+        columnas = [c["name"] for c in con.execute("PRAGMA table_info(accesos_web)")] # Devuelve la lista de columnas de una tabla
+        if "sistema" not in columnas:
+            con.execute("ALTER TABLE accesos_web ADD COLUMN sistema TEXT DEFAULT 'WEB'") #Agrega una columna a la tabla que ya existe sin borrar datos
+
         
 def a_texto(tiempo):
     return tiempo.strftime("%Y-%m-%d %H:%M:%S") if tiempo else None
@@ -208,20 +214,20 @@ def buscar_cuenta_web(usuario):
             "SELECT * FROM cuentas_web WHERE usuario = ?", (usuario,)
         ).fetchone()
 
-def guardar_acceso_web( usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo):
+def guardar_acceso_web( usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo, sistema="WEB"):
     """ Guarda cada intento de inicio de sesion en el servidor web"""
     tiempo = datetime.now().strftime("%Y-%m-%d %H:%M:%S") #Fecha y hora del intento
     with conectar () as con: 
         con.execute(
-            "INSERT INTO accesos_web(tiempo, usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (tiempo, usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo),
+        "INSERT INTO accesos_web(tiempo, usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo, sistema) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (tiempo, usuario, correo_principal, ip, dispositivo, user_agent, estado, motivo, sistema),
            
         )
 def leer_accesos_web():
     """Convierte los accesos del servidor web al formato que usan las detecciones"""
     with conectar () as con: 
         filas = con.execute(
-            "SELECT tiempo, usuario, correo_principal, ip, dispositivo, estado, motivo FROM accesos_web"
+            "SELECT tiempo, usuario, correo_principal, ip, dispositivo, estado, motivo, sistema FROM accesos_web"
         ).fetchall()
     registros = []
     for fila in filas: 
@@ -238,6 +244,7 @@ def leer_accesos_web():
             "correo_principal": fila["correo_principal"],
             "dispositivo": fila["dispositivo"],
             "motivo": fila["motivo"],
+            "sistema": fila["sistema"] or "WEB" ,
         })
     return registros 
 
@@ -260,15 +267,15 @@ def limpiar_registros_antiguos(dias=DIAS_RETENCION):
         with conectar() as con:
             con.execute("VACUUM") # Recupera el espacio que dejaron los registros borrados
     return borrados
-def fallos_recientes(usuario, minutos):
+def fallos_recientes(usuario, minutos, sistema="WEB"):
     """Cuenta las contraseñas incorrectas de un usuario en los ultimos minutos"""
     limite = f"-{minutos} minutes"
     with conectar() as con:
         # Count cuenta las filas que cumplen la condicion 
         return con.execute(
-            "SELECT COUNT (*) FROM accesos_web WHERE usuario = ? And motivo = 'CLAVE_INCORRECTA' "
+            "SELECT COUNT (*) FROM accesos_web WHERE usuario = ? AND sistema = ? AND motivo = 'CLAVE_INCORRECTA' "
             "AND tiempo >= datetime('now', 'localtime', ?)",
-            (usuario, limite),
+            (usuario, sistema, limite),
         ).fetchone()[0] #devuelve la fila con solo dato y lo saca
 
     

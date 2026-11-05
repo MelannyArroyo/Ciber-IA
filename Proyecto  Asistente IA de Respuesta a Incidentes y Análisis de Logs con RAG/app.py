@@ -280,9 +280,13 @@ def tabla_eventos():
     filas = []
     for fuente, lista in (("Windows", logs_cvs), ("Firewall", logs_fw), ("Web", web)):
         for r in lista:
+            #Los accesos web se separan segun de donde vinieron
+            if fuente == "Web":
+                origen_log = "App SOC" if r.get("sistema") == "APP" else "Servidor web"
+            else: origen_log = fuente
             filas.append({
                 "Fecha": r["tiempo"].strftime("%Y-%m-%d %H:%M:%S") if r["tiempo"] else "",
-                "Fuente": fuente,
+                "Fuente": origen_log,
                 "Usuario": r["usuario"],
                 "Correo principal": r.get("correo_principal") or "",
                 "IP": str(r["ip"]),
@@ -290,6 +294,7 @@ def tabla_eventos():
                 "Puerto": r.get("puerto") or "",
                 "Estado": r["estado"],
                 "Motivo": r.get("motivo") or "",
+                
             })
     tabla = pd.DataFrame(filas)
     return tabla.sort_values("Fecha", ascending= False) # Lo mas reciente primero
@@ -628,7 +633,8 @@ with tab_explorer:
 
     tabla = tabla_eventos()
     c1, c2, c3, c4 = st.columns(4)
-    fuente = c1.selectbox("Fuente", ["Todas", "Windows", "Firewall", "Web"], key="f_fuente")
+    fuentes = sorted(tabla["Fuente"].unique()) #Las fuentes que realmenta hay en la tabla
+    fuente = c1.selectbox("Fuente", ["Todas"]+ fuentes, key="f_fuente")
     dispositivo = c2.selectbox("Dispositivo", ["Todos", "COMPUTADORA", "TELEFONO"], key="f_disp")
     correos = sorted(c for c in tabla["Correo principal"].unique() if c)
     correo = c3.selectbox("Correo principal", ["Todos"] + correos, key="f_correo")
