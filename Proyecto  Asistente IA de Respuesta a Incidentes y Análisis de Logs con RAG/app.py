@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import time
 import html
+import base64
 from datetime import datetime
 from modulo2_rag import analizar_incidentes_con_gemini, collection
 from Ingest_modulo1 import (
@@ -19,7 +20,14 @@ from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
 from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
 from db import crear_tablas, listar_informes, obtener_informe, leer_accesos_web
 from notificaciones import enviar_alertas_pendientes, SEVERIDAD
+from pathlib import Path
 inicio_pagina = time.perf_counter() #cronometro de toda la pagina
+
+@st.cache_data
+def imagen_base64(ruta):
+    """Convierte  una imagen en texto para poder mostrarla dentro de HTML"""
+    return base64.b64encode(Path(ruta).read_bytes()).decode()
+   
 
 # pagina web
 st.set_page_config(
@@ -32,6 +40,41 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/* Encabezado texto a la izquierda y logo a la derecha*/
+.soc-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+/* Encabezado*/
+.header-logo { height: 90px; border-radius: 14px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+.badge.activo {
+    background: rgba(45, 212, 191, 0.12); color #2DD4BF;
+    border: 1px solid rgba(45,212,191, 0.4);
+    padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight:600;
+}
+/* Equipo en la barra lateral*/
+.side-rol { color: #94A3B8; font-size: 0.8rem; margin-bottom: 8px; }
+
+/* Pantalla de inicio de sesion*/
+.login-marca {text-align: center; margin: 10px 0 18px; }
+.login-logo {width: 230px; max-width: 80%; border-radius:22px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+.login-sub { color: #94A3B8; letter-spacing: 0.18em; font-size: 0.78rem; margin-top: 6px; }
+.login-ia {
+     display:inline-flex; align-items: center; gap: 8px; margin-top: 12px;
+     padding: 4px 14px; border-radius: 999px;
+     border: 1px solid rgba(34, 211, 238, 0.35); background: rgba(34, 211, 238, 0.08);
+     color: #22D3EE; font-size: 0.8rem; font_weight: 600;
+}
+[data-testid="stForm"] {
+background-color: #131D2E; border: 1px solid #263345;
+border-radius: 14px; padding: 24px 26px;
+}
+.login-titulo{ font-size: 1.6rem; font-weight: 700; color: #F1F6F9; }
+.login-texto { color: #94A3B8; margin-bottom: 12px; }
+[data-testid="stFormSubmitButton"] button {
+    background-color: #3B82F6; !important; color: white; !important; border: none !important;font-weight: 600;
+}
+[data-testid="stFormSubmitButton"] button:hover { background-color: #2563EB !important; color: white !important; }
+.login-pie { text-align: center; color: #94A3B8; font-size: 0.8rem; margin-top: 10px; }
+.login-footer { text-align: center; color: #64748B; font-size: 0.75rem; margin-top: 18px; }
+
 /*--- Barra lateral--- */
 section[data-testid="stSidebar"] {
 background-color: #0B1220;
@@ -239,27 +282,55 @@ if st.session_state.rol:
 
 #Inicio de sesion
 if st.session_state.rol is None:
-    st.title("Iniciar Sesion")
-    if st.session_state.get("aviso"):
-        st.warning(st.session_state.pop("aviso")) # Aviso de  sesion cerrada, una sola vez
-    with st.form("login"):
-        usuario = st.text_input("Usuario")
-        contrasena = st.text_input("Contraseña", type="password")
-        entrar = st.form_submit_button("Entrar")
-    if entrar:
-        # IP y navegador de quien intenta entrar es para el registro de intentos
-        ip = getattr(st.context, "ip_address", None) or "LOCAL"
-        agente = st.context.headers.get("User-Agent", "")
-        rol = verificar_usuario(usuario, contrasena, ip, agente)
-        if rol:
-            st.session_state.rol = rol
-            st.session_state.usuario = usuario
-            st.session_state.inicio_sesion = time.time()
-            st.session_state.ultima_actividad = time.time ()
-            st.rerun()
-        else:
-            st.error("Usuario o contraseña incorrectos")
+    _, centro, _ = st.columns([1, 1.2, 1]) # Columna central para la tarjeta
+    with centro:
+        st.markdown(f"""
+        <div class="login-marca">
+            <img src="data:image/jpeg;base64,{imagen_base64('logo_app.jpeg')}" class="login-logo">
+            <div class="login-sub">INCIDENT RESPONSE PLATFORM</div>
+            <div class="login-ia">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="1.8" stroke-linecap="round">
+                <line x1="12" y1="2" x2="12" y2="5"/><circle cx="12" cy="2" r="1" fill="#22D3EE"/>
+                <rect x="4" y="5" width="16" height="13" rx="4"/>
+                <circle cx="9" cy="11" r="1.5" fill="#22D3EE"/><circle cx="15" cy="11" r="1.5" fill="#22D3EE"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+            </svg>
+            Asistido por IA
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+        if st.session_state.get("aviso"):
+            st.warning(st.session_state.pop("aviso")) # Aviso de sesion cerrada, una sola vez
+        with st.form("login"):
+            st.markdown('<div class="login-titulo">Iniciar sesión</div>'
+                        '<div class="login-texto">Accede a tu centro de análisis de seguridad.</div>',
+                        unsafe_allow_html=True)
+            usuario = st.text_input("Usuario", placeholder="Ingresa tu usuario")
+            contrasena = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
+            entrar = st.form_submit_button("Iniciar sesión", use_container_width=True)
+            st.markdown('<div class="login-pie">🔒 Acceso registrado y monitoreado<br>'
+                        '¿Problemas para entrar? Contacta al administrador</div>',
+                        unsafe_allow_html=True)
+
+        if entrar:
+            ip = getattr(st.context, "ip_address", None) or "LOCAL"
+            agente = st.context.headers.get("User-Agent", "")
+            rol = verificar_usuario(usuario, contrasena, ip, agente)
+            if rol:
+                st.session_state.rol = rol
+                st.session_state.usuario = usuario
+                st.session_state.inicio_sesion = time.time()
+                st.session_state.ultima_actividad = time.time()
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos")
+
+            st.markdown('<div class="login-footer">COLMENA CYBERSOC. Sistema de análisis y respuesta a incidentes</div>',
+                        unsafe_allow_html=True)
     st.stop()
+
+
+    
 
     #Administrar usuarios
 if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
@@ -328,6 +399,18 @@ def tabla_eventos():
             })
     tabla = pd.DataFrame(filas)
     return tabla.sort_values("Fecha", ascending= False) # Lo mas reciente primero
+#Nombres claros para mostrar en la app 
+NOMBRES_DETECCION = {
+   "ATAQUE_AUTOMATIZADO" : "Ataque automatizado",
+    "ATAQUE_AUTOMATIZADO_WEB":"Fuerza bruta web",
+    "POSIBLE_COMPROMISO": "Posible compromiso",
+    "POSIBLE_COMPROMISO_WEB" :"Posible compromiso en la web",
+    "ATAQUE_MULTIFUENTE ":"Ataque en varias capas",
+   "ESCANEO_PUERTOS" :"Escaneo de puertos",
+    "ENUMERACION_USUARIOS" :"Enumeración de usuarios",
+    "VARIOS_DISPOSITIVOS" : "Acceso desde varios dispositivos",
+    "CUENTA_BLOQUEADA ": "La cuenta fue bloqueada",
+}
 
 def lista_detecciones(resumen, est_web):
     """Junta todas las detecciones en una sola"""
@@ -337,7 +420,7 @@ def lista_detecciones(resumen, est_web):
         # Cada deteccion toma su severidad del mismo diccionario que usan los correos
         filas.append({
             "Severidad": SEVERIDAD.get(tipo, "MEDIO"),
-            "Tipo": tipo,
+            "Tipo": NOMBRES_DETECCION.get(tipo, tipo),
             "Fuente": fuente,
             "Origen": origen,
             "Detalle": detalle, 
@@ -382,12 +465,20 @@ if "eventos_guardados" not in st.session_state:
 
 
 
-st.markdown("""
+st.markdown(f"""
 <div class="soc-header">
-    <div class="soc-title">🛡️ Colmena CyberSOC <span class="badge-critical">Modo Activo</span></div>
-    <div class="soc-subtitle">Plataforma Inteligente de Análisis de Logs y Triaje de Incidentes asistida por RAG & Gemini AI</div>
+    <div style="flex: 1; text-align: center;">
+        <div class="soc-title" style="justify-content: center; color: #F1F5F9;">Colmena CyberSOC <span style="color: #2DD4BF; border-radius: 12px; padding: 3px 10px; font-size: 0.8rem; background: rgba(45, 212, 191, 0.15); vertical-align: middle;">Modo activo</span></div>
+        <div class="soc subtitle">Plataforma Inteligente de Análisis de Logs y Triaje de Incidentes asistida por RAG & Gemini AI</div>
+    <div>
+    <img src="data:image/jpeg;base64, {imagen_base64('logo_app.jpeg')}"class="header-logo" style=height: 120px; width: auto;">
+</div>
+
+
+   
 </div>
 """, unsafe_allow_html=True)
+    
 
 @st.fragment(run_every=30)
 def vigilar_sesion():
@@ -431,7 +522,14 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-    st.caption("Colmena Technologies. Práctica profesional: Ciberseguridad & IA")
+    st.markdown("""
+    <div class="side-titulo">Desarrollado por</div>
+    <div class="side-card">
+        <div class="side-usuario">Melanny Arroyo</div>
+        <div class"side-usuario>Ethan Rojas</div"
+        </div>
+        <div class="login-footer">Colmena Technologies . Prática profesional</div>
+        """, unsafe_allow_html=True)
 
 
     
