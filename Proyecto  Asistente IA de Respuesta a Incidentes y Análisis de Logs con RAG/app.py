@@ -575,13 +575,14 @@ nivel_top = riesgos[0]["Nivel de riesgo"] if riesgos else "Sin riesgo"
 
 # --- PESTAÑAS PRINCIPALES ---
 tab_resumen,tab_frecuentes,tab_detecciones,tab_chat, tab_explorer, tab_report, tab_informes = st.tabs([
-    "📑 Resumen",
-    "📊 Eventos frecuentes",
-    "🚨 Detecciones",
-    "💬 Asistente SOC & Triaje IA", 
-    "📜 Explorador de Logs", 
-    "📋 Generador de Reporte SOC",
-    "📄 Informes",
+    ":material/dashboard: Resumen",
+    ":material/trending_up: Eventos frecuentes",
+    ":material/gpp_maybe: Detecciones",
+    ":material/smart_toy: Asistente SOC",
+    ":material/table_view: Explorador de logs",
+    ":material/summarize: Generador de reporte",
+    ":material/picture_as_pdf: Informes",
+
 ])
 # Pestaña de resumen es el estado general del sistema
 with tab_resumen:
@@ -792,7 +793,7 @@ with tab_chat:
 with tab_explorer:
     col_titulo, col_refresh = st.columns([10, 2])
     col_titulo.markdown("Todos los eventos")
-    if col_refresh.button("🔄", key="actualizar", use_container_width=True):
+    if col_refresh.button( "", icon=":material/refresh:", key="actualizar", use_container_width=True):
         st.cache_data.clear()                               # Borra la cache para leer datos nuevos
         st.session_state.pop("eventos_guardados", None)     # Vuelve a enviar eventos y enviar alertas
         st.rerun()
