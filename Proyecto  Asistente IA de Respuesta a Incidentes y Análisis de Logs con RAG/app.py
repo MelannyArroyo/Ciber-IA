@@ -410,14 +410,14 @@ NOMBRES_DETECCION = {
     "ATAQUE_AUTOMATIZADO_WEB":"Fuerza bruta web",
     "POSIBLE_COMPROMISO": "Posible compromiso",
     "POSIBLE_COMPROMISO_WEB" :"Posible compromiso en la web",
-    "ATAQUE_MULTIFUENTE ":"Ataque en varias capas",
+    "ATAQUE_MULTIFUENTE":"Ataque en varias capas",
    "ESCANEO_PUERTOS" :"Escaneo de puertos",
     "ENUMERACION_USUARIOS" :"Enumeración de usuarios",
     "VARIOS_DISPOSITIVOS" : "Acceso desde varios dispositivos",
     "CUENTA_BLOQUEADA": "La cuenta fue bloqueada",
 }
 
-def lista_detecciones(resumen, est_web):
+def lista_detecciones(resumen, est_web, web):
     """Junta todas las detecciones en una sola"""
     filas = []
 
@@ -430,6 +430,17 @@ def lista_detecciones(resumen, est_web):
             "Origen": origen,
             "Detalle": detalle, 
         })
+    def fuente_web(origen):
+        """Dice si un origen aparece en el servidor web, en la app o si fue en las dos"""
+        sistemas = {r.get("sistema") for r in web
+                    if origen in (r["ip"], r["usuario"], r.get("correo_principal"))}
+        if sistemas == {"APP"}:
+            return "App SOC"
+        if sistemas == {"WEB"}:
+            return "Servidor web"
+        return "Servidor web y App SOC"
+
+    
     for ip in resumen["ataques"]:
         agregar("ATAQUE_AUTOMATIZADO", "Windows", ip, "Rafaga de fallos en poco tiempo")
     for ip in sorted(set(resumen["escaneos"])):
@@ -439,15 +450,15 @@ def lista_detecciones(resumen, est_web):
     for ip in resumen["multifuente"]:
         agregar("ATAQUE_MULTIFUENTE", "Windows + Firewall", ip, "Fallos de login y bloqueos del firewall")
     for ip in est_web["ataques"]:
-        agregar("ATAQUE_AUTOMATIZADO_WEB", "Web", ip, "Fuerza bruta contra el login web")
+            agregar("ATAQUE_AUTOMATIZADO_WEB", fuente_web(ip), ip, "Fuerza bruta contra el login web")
     for ip in est_web["correlaciones"]:
-        agregar("POSIBLE_COMPROMISO_WEB", "Web", ip, "Fallos seguidos de un acceso OK en el login web")
+        agregar("POSIBLE_COMPROMISO_WEB", fuente_web(ip), ip, "Fallos seguidos de un acceso OK en el login web")
     for ip, cantidad in est_web["enumeracion"].items():
-        agregar("ENUMERACION_USUARIOS", "Web", ip, f"{cantidad} usuarios inexistentes probados")
+        agregar("ENUMERACION_USUARIOS", fuente_web(ip), ip, f"{cantidad} usuarios inexistentes probados")
     for correo in est_web["varios_dispositivos"]:
-        agregar("VARIOS_DISPOSITIVOS", "Web", correo, "Accesos OK desde dispositivos distintos")
+        agregar("VARIOS_DISPOSITIVOS", fuente_web(correo), correo, "Accesos OK desde dispositivos distintos")
     for usuario in est_web["bloqueos"]:
-        agregar ("CUENTA_BLOQUEADA", "Web", usuario, "Cuenta bloqueada por varios intentos fallidos")
+        agregar ("CUENTA_BLOQUEADA", fuente_web(usuario), usuario, "Cuenta bloqueada por varios intentos fallidos")
 
     # Ordena ALTO a INFORMATIVO como el mas bajo
     orden = {"ALTO": 0, "MEDIO": 1, "INFORMATIVO": 2}
@@ -545,7 +556,7 @@ try:
 except Exception:
     total_logs_count = 4
 # Van a usar la misma lista que la pestaña de detecciones
-detecciones = lista_detecciones(resumen, est_web)
+detecciones = lista_detecciones(resumen, est_web, web)
 riesgos = niveles_de_riesgo(detecciones)
 amenazas = len(detecciones)
 severidades = {d["Severidad"] for d in detecciones}
@@ -584,6 +595,7 @@ with col_kpi1:
         <div style="font-size:0.75rem; color:#64748B;">Almacenados en ChromaDB</div>
     </div>
     """, unsafe_allow_html=True)
+    
 
 with col_kpi2:
      st.markdown(f"""
@@ -611,8 +623,24 @@ with col_kpi4:
         <div style="font-size:0.75rem; color:#10B981;">Logs de Windows y firewall</div>
     </div>
     """, unsafe_allow_html=True)
-
 st.markdown("<br>", unsafe_allow_html=True)
+
+with tab_resumen:
+ # Nivel de riesgo por origen
+    with st.container(key="panel_riesgo"):
+        st.subheader("Nivel de riesgo por origen")
+        riesgos = niveles_de_riesgo(detecciones)
+        if riesgos:
+            colores_riesgo = {"CRITICO": "#F87171", "ALTO": "#FB923C", "MEDIO":"#FBBF24", "BAJO": "#2DD4BF"}
+
+            def color_riesgo(valor):
+                color = colores_riesgo.get(valor)
+                return f"color: {color}; font-weight: 600" if color else ""
+
+            tabla_riesgo = pd.DataFrame(riesgos).style.map(color_riesgo, subset=["Nivel de riesgo"])
+            st.dataframe(tabla_riesgo, use_container_width=True, hide_index=True)
+        else:
+            st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF;></span>Sin origenes de riesgo</div', unsafe_allow_html=True)
 #Pestaña de eventos mas frecuentes: ranking de IPs, usuarios y puertos, en una sola tabla
 with tab_frecuentes:
     with st.container(key="panel_eventos"):
@@ -668,28 +696,7 @@ with tab_detecciones:
             st.dataframe(tabla_det, use_container_width=True, hide_index=True)
         else:
             st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF";></span>No se detectaron amenazas</div>', unsafe_allow_html=True)
-
-    # Nivel de riesgo por origen
-    with st.container(key="panel_riesgo"):
-        st.subheader("Nivel de riesgo por origen")
-        riesgos = niveles_de_riesgo(detecciones)
-        if riesgos:
-            colores_riesgo = {"CRITICO": "#F87171", "ALTO": "#FB923C", "MEDIO":"#FBBF24", "BAJO": "#2DD4BF"}
-
-            def color_riesgo(valor):
-                color = colores_riesgo.get(valor)
-                return f"color: {color}; font-weight: 600" if color else ""
-
-            tabla_riesgo = pd.DataFrame(riesgos).style.map(color_riesgo, subset=["Nivel de riesgo"])
-            st.dataframe(tabla_riesgo, use_container_width=True, hide_index=True)
-        else:
-            st.markdown('<div class="estado"><span class="sev-dot" style="background:#2DD4BF;></span>Sin origenes de riesgo</div', unsafe_allow_html=True)
-
         
-
-    
-    
-
 #Pestaña de informes:descarga del PDF y el historial guardado
 with tab_informes:
     st.subheader("Informe PDF del análisis")
