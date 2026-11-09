@@ -374,6 +374,12 @@ def cargar_datos():
 def pdf_cacheado(resumen):
     """Genera el PDF solo cuando cambian los resultados del analisis"""
     return generar_informe_pdf(resumen)
+# Motivos claros para mostrar en la app
+MOTIVOS = {
+    "CLAVE_INCORRECTA": "Contraseña incorrecta",
+    "USUARIO_NO_EXISTE": "Usuario no existe en el sistema",
+    "CUENTA_BLOQUEADA": "La cuenta fue bloqueada",
+}
 @st.cache_data(ttl=60, show_spinner=False)
 def tabla_eventos():
     """Junta Windows. firewall y servidor web en una sola tabla con las mismas columnas"""
@@ -389,13 +395,12 @@ def tabla_eventos():
                 "Fecha": r["tiempo"].strftime("%Y-%m-%d %H:%M:%S") if r["tiempo"] else "",
                 "Fuente": origen_log,
                 "Usuario": r["usuario"],
-                "Correo principal": r.get("correo_principal") or "",
+                "Email": r.get("correo_principal") or "",
                 "IP": str(r["ip"]),
                 "Dispositivo": r.get("dispositivo") or "COMPUTADORA",
                 "Puerto": r.get("puerto") or "",
                 "Estado": r["estado"],
-                "Motivo": r.get("motivo") or "",
-                
+                "Motivo": MOTIVOS.get((r.get("motivo") or "").strip(), r.get("motivo") or ""),
             })
     tabla = pd.DataFrame(filas)
     return tabla.sort_values("Fecha", ascending= False) # Lo mas reciente primero
@@ -409,7 +414,7 @@ NOMBRES_DETECCION = {
    "ESCANEO_PUERTOS" :"Escaneo de puertos",
     "ENUMERACION_USUARIOS" :"Enumeración de usuarios",
     "VARIOS_DISPOSITIVOS" : "Acceso desde varios dispositivos",
-    "CUENTA_BLOQUEADA ": "La cuenta fue bloqueada",
+    "CUENTA_BLOQUEADA": "La cuenta fue bloqueada",
 }
 
 def lista_detecciones(resumen, est_web):
@@ -555,7 +560,21 @@ ip_top = riesgos[0]["Origen"] if riesgos else "Ninguno"
 nivel_top = riesgos[0]["Nivel de riesgo"] if riesgos else "Sin riesgo"
 
 
-col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
+
+
+# --- PESTAÑAS PRINCIPALES ---
+tab_resumen,tab_frecuentes,tab_detecciones,tab_chat, tab_explorer, tab_report, tab_informes = st.tabs([
+    "📑 Resumen",
+    "📊 Eventos frecuentes",
+    "🚨 Detecciones",
+    "💬 Asistente SOC & Triaje IA", 
+    "📜 Explorador de Logs", 
+    "📋 Generador de Reporte SOC",
+    "📄 Informes",
+])
+# Pestaña de resumen es el estado general del sistema
+with tab_resumen:
+    col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
 
 with col_kpi1:
     st.markdown(f"""
@@ -594,33 +613,27 @@ with col_kpi4:
     """, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
-
-# --- PESTAÑAS PRINCIPALES ---
-tab_frecuentes,tab_detecciones,tab_chat, tab_explorer, tab_report, tab_informes = st.tabs([
-    "📊 Eventos frecuentes",
-    "🚨 Detecciones",
-    "💬 Asistente SOC & Triaje IA", 
-    "📜 Explorador de Logs", 
-    "📋 Generador de Reporte SOC",
-    "📄 Informes",
-])
-#Pestaña de eventos mas frecuentes: ranking de IPs, usuarios y puertos
+#Pestaña de eventos mas frecuentes: ranking de IPs, usuarios y puertos, en una sola tabla
 with tab_frecuentes:
     with st.container(key="panel_eventos"):
-        st.subheader("Eventos mas frecuentes")
-        col_ips, col_usuarios, col_puertos = st.columns(3)
-        with col_ips:
-            st.markdown("**IPs**")
-            st.dataframe([{"IP": ip, "Eventos": n} for ip, n in resumen["ranking"] ["ips"]],
-                            use_container_width=True, hide_index=True)  
-        with col_usuarios:
-            st.markdown("**Usuarios**")
-            st.dataframe([{"Usuario": u, "Eventos": n} for u, n in resumen["ranking"] ["usuarios"]],
-                        use_container_width=True, hide_index=True) 
-        with col_puertos:
-            st.markdown("**Puertos del Firewall**")
-            st.dataframe([{"Puerto": p, "Eventos": n} for p, n in resumen["ranking"] ["puertos"]],
-                            use_container_width=True, hide_index=True)
+        st.subheader("Eventos más frecuentes")
+        # Va a juntar el ranking de IPs, usuarios y puertos en una sola  lista
+        ranking = []
+        for tipo, llave in (("IP", "ips"), ("Usuario", "usuarios"), ("Puerto", "puertos")):
+            for valor, cantidad in resumen["ranking"][llave]:
+                ranking.append({"Tipo": tipo, "IP, Usuario o puerto": str(valor), "Eventos": cantidad})
+        tabla_rank = pd.DataFrame(ranking)
+
+        c_tipo, c_buscar = st.columns([1, 3])
+        tipo_rank = c_tipo.selectbox("Tipo", ["Todos", "IP", "Usuario", "Puerto"], key="rank_tipo")
+        buscar_rank = c_buscar.text_input("Buscar", placeholder="Escribe la IP, usuario o un puerto", key="rank_buscar")
+
+        if tipo_rank != "Todos":
+            tabla_rank = tabla_rank[tabla_rank["Tipo"] == tipo_rank]
+        if buscar_rank:
+            tabla_rank = tabla_rank[tabla_rank["IP, Usuario o puerto"].str.contains(buscar_rank, case=False, regex=False)]
+        st.dataframe(tabla_rank, use_container_width=True, hide_index=True)
+   
 
 #pestaña de detecciones: muestra los resultados del analisis de logs reales
 with tab_detecciones:
@@ -771,35 +784,58 @@ with tab_chat:
 # EXPLORADOR DE LOGS una sola tabla con todas las fuentes 
 with tab_explorer:
     col_titulo, col_refresh = st.columns([10, 2])
-    col_titulo.markdown("##### Todos los eventos")
-    if col_refresh.button("🔄", key="actualizar"):
+    col_titulo.markdown("Todos los eventos")
+    if col_refresh.button("🔄", key="actualizar", use_container_width=True):
         st.cache_data.clear()                               # Borra la cache para leer datos nuevos
         st.session_state.pop("eventos_guardados", None)     # Vuelve a enviar eventos y enviar alertas
         st.rerun()
 
     tabla = tabla_eventos()
-    c1, c2, c3, c4 = st.columns(4)
-    fuentes = sorted(tabla["Fuente"].unique()) #Las fuentes que realmenta hay en la tabla
-    fuente = c1.selectbox("Fuente", ["Todas"]+ fuentes, key="f_fuente")
-    dispositivo = c2.selectbox("Dispositivo", ["Todos", "COMPUTADORA", "TELEFONO"], key="f_disp")
-    correos = sorted(c for c in tabla["Correo principal"].unique() if c)
-    correo = c3.selectbox("Correo principal", ["Todos"] + correos, key="f_correo")
-    estados = c4._multiselect("Estado", ["OK", "FAIL", "DENY"], default=["OK", "FAIL", "DENY"], key="f_estado")
-    ip_filtro = st.text_input("Filtar por IP", key="f_ip")
+    buscar = st.text_input("Buscar", placeholder="Buscar en los registros....", key="explorador_buscar")
+    if buscar:
+        # Deja que las filas cualquier columna tiene texto buscado
+        coincide = tabla.astype(str).apply(lambda col: col.str.contains(buscar, case=False, regex=False))
+        tabla = tabla[coincide.any(axis=1)]
 
-    # Cada filtro deja solo las filas que coinciden 
-    if fuente != "Todas":
-        tabla = tabla[tabla["Fuente"] == fuente]
-    if dispositivo != "Todos":
-        tabla = tabla[tabla["Dispositivo"] == dispositivo]
-    if correo != "Todos":
-        tabla = tabla[tabla["Correo principal"] == correo]
-    tabla = tabla[tabla["Estado"].isin(estados)]
-    if ip_filtro:
-        tabla = tabla[tabla["IP"].str.contains(ip_filtro, regex=False)]
+    total = len(tabla)
+    tabla = tabla.head(2000) # Muestra los 2000 mas recientes para que la app no se haga lenta
 
-    st.dataframe(tabla, use_container_width=True, hide_index=True)
-    st.caption(f"Mostrando {len(tabla)} eventos")
+    #Colores son en el texto, igual que en detecciones
+    colores_estado = {"OK": "#2DD4BF", "FAIL": "#F87171", "DENY": "#FBBF24"}
+    colores_fuente = {"Windows": "#3B82F6", "Firewall": "#8B5CF6", "Servidor web": "#22D3EE", "App SOC": "#2DD4BF" }
+
+    def color_estado(valor):
+        color = colores_estado.get(valor)
+        return f"color: {color}; font-weight: 600" if color else ""
+    def color_fuente(valor):
+        color = colores_fuente.get(valor)
+        return f"color: {color}; font-weight: 600" if color else ""
+
+    tabla_color = tabla.style.map(color_estado, subset=["Estado"]).map(color_fuente, subset=["Fuente"])
+    st.dataframe(tabla_color, 
+                 use_container_width=True, 
+                 hide_index=True,
+                 column_config={   
+                     "Fecha": st.column_config.TextColumn(width="medium"),
+                     "Fuente": st.column_config.TextColumn(width="small"),
+                     "Usuario": st.column_config.TextColumn(width="medium"),
+                     "Email": st.column_config.TextColumn(width="medium"),
+                     "IP": st.column_config.TextColumn(width="small"),
+                     "Dispositivo": st.column_config.TextColumn(width="medium"),
+                     "Puerto": st.column_config.TextColumn(width="small"),
+                     "Estado": st.column_config.TextColumn(width="small"),
+                     "Motivo": st.column_config.TextColumn(width="large"),
+                     
+                 },
+
+                 )
+    st.caption(f"Mostrando {len(tabla)} de {total} eventos")
+
+
+
+ 
+
+   
 
     
    
