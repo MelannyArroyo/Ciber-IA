@@ -40,11 +40,38 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/* Pestaña del asistente de IA*/
+
+.ia-header { 
+    display:flex; align-items: center; gap: 14px;
+     background-color: #131D2E; border: 1px solid #263345;
+     border-radius: 12px: padding: 14px 18px; margin.bottom: 12px;
+ }
+ .ia-titulo {
+ font-size: 1.2rem;
+ font-weight: 700;
+ color: #F1F5F9;
+ }
+ .ia-texto {
+ color: #94A3B8;
+ font-size: 1rem;
+ }
+ div[class*="st-key-rapido"] button {
+ background: rgba(34, 211, 238, 0.08) !important;
+ border: 1px solid rba(34,211,238, 0.35) !important;
+ color: #22D3EE !important;
+ border-radius: 999px !important;
+ font-size: 0.85rem;
+ }
+ div[class*="st-key-rapido"] button:hover { 
+ background: (34,211,238, 0.18) !important;
+ } 
+
 /* Encabezado texto a la izquierda y logo a la derecha*/
 .soc-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 /* Encabezado*/
 .header-logo { height: 90px; border-radius: 14px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
-.badge.activo {
+.badge-activo {
     background: rgba(45, 212, 191, 0.12); color #2DD4BF;
     border: 1px solid rgba(45,212,191, 0.4);
     padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight:600;
@@ -60,7 +87,7 @@ st.markdown("""
      display:inline-flex; align-items: center; gap: 8px; margin-top: 12px;
      padding: 4px 14px; border-radius: 999px;
      border: 1px solid rgba(34, 211, 238, 0.35); background: rgba(34, 211, 238, 0.08);
-     color: #22D3EE; font-size: 0.8rem; font_weight: 600;
+     color: #22D3EE; font-size: 0.8rem; font-weight: 600;
 }
 [data-testid="stForm"] {
 background-color: #131D2E; border: 1px solid #263345;
@@ -736,59 +763,63 @@ with tab_informes:
 
 # --- PESTAÑA 1: CHATBOT SOC ---
 with tab_chat:
-    st.markdown("##### ⚡ Consultas Rápidas de Seguridad")
-    
-    col_b1, col_b2, col_b3 = st.columns(3)
+    # Encabezado con el mismo robot del login
+    st.markdown("""
+    <div class="ia-header">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="1.8" stroke-linecap="round">
+            <line x1="12" y1="2" x2="12" y2="5"/><circle cx="12" cy="2" r="1" fill="#22D3EE"/>
+            <rect x="4" y="5" width="16" height="13" rx="4"/>
+            <circle cx="9" cy="11" r="1.5" fill="#22D3EE/><circle cx= "15" cy="11" r="1.5" fill="#22D3EE"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+        <div>
+            <div class="ia-titulo">Asistente SOC</div>
+            <div class="ia-texto">Pregunta sobre la actividad del sistema y los eventos del sistema.</div>
+        <div>
+    </div>""", unsafe_allow_html=True)
+
+    # Botones de consultas rapidas
+    st.caption("Consultas rápidas")
+    c1, c2, c3 = st.columns(3)
     prompt_rapido = None
+    if c1.button("Intentos fallidos" , icon=":material/crisis_alert:",  key="rapido_fallos", use_container_width=True):
+        prompt_rapido = "¿Qué IPs y usuarios tienen intentos fallidos de inicio de sesión y qué tan grave es?"
+    if c2.button("Orígenes de mayor riesgo", icon=":material/dangerous:", key="rapido_riesgo", use_container_width=True):
+        prompt_rapido = "¿Cuáles son los orígenes con más actividad sospechosa y que recomiendas hacer?"
+    if c3.button("Bloqueos del Firewall", icon=":material/block:", key="rapido_firewall", use_container_width=True):
+        prompt_rapido = "¿Qué conexiones bloqueó el firewall y hacia que puertos?"
 
-    if col_b1.button(" Analizar intentos fallidos de inicio de sesión", use_container_width=True):
-        prompt_rapido =  "¿Qué IPs y usuarios tienen intentos fallidos de inicio de sesión y que tan grave es?"
-    if col_b3.button(" Revisar bloqueos del firewall", use_container_width=True):
-        prompt_rapido = "¿Qué conexiones bloqueó el firewall y hacia qué puertos?"
-
-    st.markdown("---")
-
-    # Inicializar historial del chat
+    # Historial del chat
     if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {
-                "role": "assistant",
-                "content": " **Hola, soy el Asistente  + de Colmena Technologies.**\n\nEstoy listo para analizar la telemetría de red. Selecciona un botón de acceso rápido o escribe tu consulta en el campo inferior."
-            }
-        ]
-
-    # Renderizar historial
+        st.session_state.messages = [{
+            "role": "assistant",
+            "content": "**Hola, soy el asistente SOC de Colmena Technologies.**\n\n Estoy aquí para ayudar puedo analizar los eventos registrados. Elige una consulta rápida o escribe tu pregunta para comenzar.",
+        }]
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
+        avatar = ":material/smart_toy:" if message["role"] == "assistant" else ":material/person:"
+        with st.chat_message(message["role"], avatar=avatar):
             st.markdown(message["content"])
 
-    # Captura de mensaje (Fuera de bucles para evitar duplicados)
-    user_input = st.chat_input("Escribe tu pregunta de análisis (Ej: ¿Qué incidentes críticos ocurrieron hoy?)", key="soc_main_input")
+    # Pregunta escrita o boton rápido
+    user_input = st.chat_input("Escribe tu pregunta (ej: ¿qué incidentes críticos ocurrieron hoy?)", key="soc_main_input")
     prompt_a_procesar = prompt_rapido if prompt_rapido else user_input
 
     if prompt_a_procesar:
         st.session_state.messages.append({"role": "user", "content": prompt_a_procesar})
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar=":material/person:"):
             st.markdown(prompt_a_procesar)
 
-        with st.chat_message("assistant"):
-            with st.spinner(" Analizando vectores en ChromaDB y sintetizando reporte con Gemini..."):
+        with st.chat._message("assistant", avatar=":material/smart_toy:"):
+            with st.spinner("Analizando eventos con ChromaDB y Gemini..."):
                 try:
                     respuesta = analizar_incidentes_con_gemini(prompt_a_procesar)
                     st.markdown(respuesta)
-                    
-                    
-                    
-                    
-                    
-                    
-                    
                     st.session_state.messages.append({"role": "assistant", "content": respuesta})
                 except Exception as e:
-                    err = f" **Error de procesamiento:** {e}"
+                    err = f"**Error de procesamiento:** {e}"
                     st.error(err)
                     st.session_state.messages.append({"role": "assistant", "content": err})
-
+ 
 # EXPLORADOR DE LOGS una sola tabla con todas las fuentes 
 with tab_explorer:
     col_titulo, col_refresh = st.columns([10, 2])
@@ -839,15 +870,6 @@ with tab_explorer:
                  )
     st.caption(f"Mostrando {len(tabla)} de {total} eventos")
 
-
-
- 
-
-   
-
-    
-   
-   
  # Reporte SOC generado por Gemini con los resultados reales del del analisis
 with tab_report:
     st.markdown("#####  Exportar Reporte Ejecutivo del Incident Response")
@@ -894,4 +916,4 @@ with tab_report:
             file_name=f"Reporte_SOC_Colmena_{datetime.now().strftime('%Y%m%d')}.md",
         )
 
-st.sidebar.caption(f"⏱️ Página completa en {(time.perf_counter() - inicio_pagina)* 1000:.0f}ms")
+st.sidebar.caption(f"⏱️ Página completa en {(time.perf_counter() - inicio_pagina)* 1000:.0f}ms")    

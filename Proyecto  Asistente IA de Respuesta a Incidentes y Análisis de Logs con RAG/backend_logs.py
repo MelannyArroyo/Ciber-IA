@@ -1,53 +1,80 @@
 from fpdf import FPDF
 from datetime import datetime
 from db import crear_tablas, guardar_informe
+import os
 
+FONDO_OSCURO = (15, 23, 42)
+AZUL = (37, 99, 235)
+TURQUESA = (34, 211, 238)
+GRIS= (241, 245, 249)
+TEXTO = (30,41,59)
 
-
-AZUL = (31,56,100)
-GRIS = (242,244,247)
-TEXTO = (45,45,45)
 
 class Informe(FPDF):
+    subtitulo = "Informe de análisis de logs"
 
     def header(self):
-        self.set_fill_color(*AZUL)
-        self.rect(0,0,210,26, "F")
-        import os
-        ruta_logo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.jpg")
-        if os.path.exists(ruta_logo):
-            self.image(ruta_logo, x=12, y=5, h=16)
+        #Franja oscura y linea turquesa
+        self.set_fill_color(*FONDO_OSCURO)
+        self.rect(0, 0, 210, 30, "F")
+        self.set_fill_color(*TURQUESA)
+        self.rect(0, 30, 210, 1.2, "F")
 
-        self.set_xy(34,7)
-        self.set_text_color(255,255,255)
-        self.set_font("Helvetica", "B", 15)
-        self.cell(0,8, "Colmena Technologies ", ln=True)
-        self.set_x(34)
+        # Logo de la app
+        ruta_logo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo_app.jpeg")
+        if os.path.exists(ruta_logo):
+            self.image(ruta_logo, x=12, y=5, h=20)
+
+        # Nombre y subtítulo
+        self.set_xy(36, 8)
+        self.set_text_color(255, 255, 255)
         self.set_font("Helvetica", "", 9)
-        self.cell(0,6, "Informe de análisis de logs")
+        self.cell(0, 8, "Colmena Technologies", new_x="LMARGIN", new_y="NEXT")
+        self.set_x(36)
+        self.set_font("Helvetica", "", 9)
+        self.set_text_color(*TURQUESA)
+        self.cell(0, 6, self.subtitulo)
+
+        # Etiqueta "Asistido por IA"
+        self.set_xy(160, 11.5)
+        self.set_draw_color(*TURQUESA)
+        self.set_font("Helvetica", "B", 8)
+        self.cell(38, 7, "Asistido por IA", border=1, align="C")
+
         self.set_text_color(*TEXTO)
-        self.set_y(32)
+        self.set_y(38)
 
     def footer(self):
-        self.set_y(-12)
+        self.set_draw_color(*TURQUESA)
+        self.line(12, 282, 198, 282)
+        self.set_y(-14)
         self.set_font("Helvetica", "", 8)
-        self.set_text_color(130,130,130)
-        self.cell(0,6, f"Página {self.page_no()}", align="R")
+        self.set_text_color(130, 130, 130)
+        self.cell(0, 6, "Colmena Technologies . Asistente SOC . Documento confidencial")
+        self.set_x(self.l_margin)
+        self.cell(0, 6, f"Página {self.page_no()}", align="R")
         self.set_text_color(*TEXTO)
+
+       
 
 def titulo_seccion(pdf, texto):
     pdf.ln(4)
+    y = pdf.get_y()
+    pdf.set_fill_color(*TURQUESA)
+    pdf.rect(pdf.l_margin,  y + 1.5, 1.5, 5, "F" )
+    pdf.set_x(pdf.l_margin + 4)
     pdf.set_font("Helvetica", "B", 12)
-    pdf.set_text_color(*AZUL)
-    pdf.cell(0,8, texto, ln=True)
+    pdf.set_text_color(*FONDO_OSCURO)
+    pdf.cell(0, 8, texto, new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*TEXTO)
     pdf.set_font("Helvetica", "", 10)
+ 
 
 def tarjetas(pdf,valores):
     y0 = pdf.get_y()
     ancho = (186-3*4) / 4
     for i, (titulo,valor) in enumerate(valores):
-        x = 12 + i * (ancho +4)
+        x = 12 + i * (ancho + 4)
         pdf.set_fill_color(*GRIS)
         pdf.rect(x, y0, ancho, 20, "F")
         pdf.set_xy(x +4, y0 + 3)
@@ -62,6 +89,7 @@ def tarjetas(pdf,valores):
 
 def tabla(pdf,encabezados, filas, anchos):
     pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(*FONDO_OSCURO)
     pdf.set_fill_color(255,255,255)
     for h, w in zip(encabezados, anchos):
         pdf.cell(w,7,h,fill=True)
@@ -85,7 +113,7 @@ def generar_informe_pdf(resumen):
 
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(*AZUL)
-    pdf.cell(0,10, "Informe de analisis de logs", ln=True)
+    pdf.cell(0,10, "Informe de análisis de logs", ln=True)
     pdf.set_text_color(*TEXTO)
     pdf.set_font("Helvetica", "", 9)
     pdf.cell(0,6, f"Generado: {datetime.now():%d/%m/%Y %H:%M}", ln=True)
@@ -95,11 +123,10 @@ def generar_informe_pdf(resumen):
         f"Se analizaron {resumen['total']} eventos. "
         f"{por_estado.get('OK', 0)} fueron permitidos, "
         f"{por_estado.get('DENY', 0)} bloqueados y "
-        f"{por_estado.get('FAIL', 0)} fallidos. "
+        f"{por_estado.get('FAIL', 0)} fallido(s). "
         f"Se detectaron {len(ataques)} ataque(s) automatizados(s) y "
         f"{len(escaneos)} posible(s) escaneo(s) de puertos."
-
-    ))
+    ), align="L")
     pdf.ln(3)
     tarjetas(pdf, [
         ("Total de eventos", resumen["total"]),

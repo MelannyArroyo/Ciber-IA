@@ -27,11 +27,23 @@ def exportar_eventos():
     )
     salida = resultado.stdout.strip() or resultado.stderr.strip()
     return " | ".join(salida.splitlines()) # Junta los mensajes en una sola linea 
-   
+
+MAX_LINEAS_LOG = 500 # Muestra 10 dias de vigilancia de 30 minutos 
+
+def rotar_log():
+    """Si el log supera max lineas log, lo guarda como vigilancia.log.old y empieza otro nuevo"""
+    ruta = Path(RUTA_REGISTRO)
+    if not ruta.exists():
+        return
+    with open(ruta, encoding="utf-8-sig") as archivo:
+        total = sum(1 for _ in archivo) # Cuenta las lineas  sin cargar todo
+    if total > MAX_LINEAS_LOG:
+        ruta.replace(ruta.with_suffix(".log.old")) # Reemplaza  el old anterior
   
 
 def vigilar():
     """Lee los logs, guarda los eventos nuevos y envia las alertas pendientes"""
+    rotar_log()
     exportacion = exportar_eventos()   #Actualiza el archivo automaticamente
     logs_csv = ingestar_logs(ruta_archivo) # Lee el archivo nuevo     exportacion = exportar_eventos
     borrados = limpiar_registros_antiguos() # Borra eventos de mas de 90 dias 

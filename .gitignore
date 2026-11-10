@@ -3,3 +3,5 @@ archivos_logs/eventos_windows.csv
 archivos_logs/pfirewall.log
 archivos_logs/
 vigilancia.log
+vigilancia.log.old
+
