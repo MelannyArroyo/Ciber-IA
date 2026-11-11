@@ -16,7 +16,7 @@ from Ingest_modulo1 import (
     niveles_de_riesgo
     
 )
-from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe
+from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe, generar_pdf_reporte_ia
 from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
 from db import crear_tablas, listar_informes, obtener_informe, leer_accesos_web
 from notificaciones import enviar_alertas_pendientes, SEVERIDAD
@@ -45,7 +45,7 @@ st.markdown("""
 .ia-header { 
     display:flex; align-items: center; gap: 14px;
      background-color: #131D2E; border: 1px solid #263345;
-     border-radius: 12px: padding: 14px 18px; margin.bottom: 12px;
+     border-radius: 12px: padding: 14px 18px; margin-bottom: 12px;
  }
  .ia-titulo {
  font-size: 1.2rem;
@@ -56,19 +56,74 @@ st.markdown("""
  color: #94A3B8;
  font-size: 1rem;
  }
- div[class*="st-key-rapido"] button {
- background: rgba(34, 211, 238, 0.08) !important;
- border: 1px solid rba(34,211,238, 0.35) !important;
- color: #22D3EE !important;
- border-radius: 999px !important;
- font-size: 0.85rem;
- }
- div[class*="st-key-rapido"] button:hover { 
- background: (34,211,238, 0.18) !important;
- } 
+.stButton button,
+.stDownloadButton button,
+.stFormSubmitButton button {
+background: rgba(34, 211, 238, 0..0) !important;
+border: 1px solid rgba(34, 211, 238, 0.035) !important;
+color: #22D3EE !important;
+border-radius: 999px !important;
+font-size: 0.85rem;
+}
+.stButton button:hover,
+.stDownloadButton button:hover {
+background: rgba(34, 211, 238, 0.18) !important;
+border-color: #22D3EE !important;
+color: #FFFFFF !important;
+}
+.usuario-fila {
+display:  flex;
+justify-content: space.between;
+align-items: center;
+gap: 12px;
+background: #131D2E;
+border: 1px solid #263345;
+border-radius: 10px;
+padding: 12px 14px;
+margin-bottom: 10px
+font-size: 0.85rem;
+color: #F1F5F9;
+}
+.usuario-fila span:first-child {
+display: block;
+font-weight: 600
+margin-botton: 8px;
+}
+.rol-chip {
+font-size: 0.7rem;
+padding: 3px 10px;
+border-radius: 999px;
+white-space: nowrap;
+}
+.rol-administrador {
+background: rgba(34, 211, 238, 0.12);
+color: #22D3EE;
+border: 1px solid rgba(34, 211, 238, 0.35);
+}
+.rol-analista {
+background: rgba(59, 130, 246, 0.12);
+color: #60A5FA;
+border: 1px solid rgba(50, 130, 246, 0.35);
+}
+.sesion-header {
+position: absolute;
+top: 18px
+right: 22px;
+text-align: right;
+background: rgba(19, 29, 46, 0.75);
+border: 1px solid #263345;
+border-radius: 12px
+padding: 10px 14px;
+}
+.sesion-nombre {
+font-weight: 600;
+font-size: 0.9rem;
+color: #F1F5F9;
+margin-bottom: 6px;
+}
 
 /* Encabezado texto a la izquierda y logo a la derecha*/
-.soc-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.soc-header { display: flex; justify-content: space-between; align-items: center; gap: 20px;  }
 /* Encabezado*/
 .header-logo { height: 90px; border-radius: 14px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
 .badge-activo {
@@ -96,7 +151,7 @@ border-radius: 14px; padding: 24px 26px;
 .login-titulo{ font-size: 1.6rem; font-weight: 700; color: #F1F6F9; }
 .login-texto { color: #94A3B8; margin-bottom: 12px; }
 [data-testid="stFormSubmitButton"] button {
-    background-color: #3B82F6; !important; color: white; !important; border: none !important;font-weight: 600;
+    background-color: #320652; !important; color: white; !important; border: none !important;font-weight: 600;
 }
 [data-testid="stFormSubmitButton"] button:hover { background-color: #2563EB !important; color: white !important; }
 .login-pie { text-align: center; color: #94A3B8; font-size: 0.8rem; margin-top: 10px; }
@@ -150,6 +205,7 @@ border-right: 1px solid #263345;}
         border-left: 6px solid #3B82F6;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
         margin-bottom: 25px;
+       
     }
     .soc-title {
         font-size: 2.2rem;
@@ -334,7 +390,7 @@ if st.session_state.rol is None:
                         unsafe_allow_html=True)
             usuario = st.text_input("Usuario", placeholder="Ingresa tu usuario")
             contrasena = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
-            entrar = st.form_submit_button("Iniciar sesión", use_container_width=True)
+            entrar = st.form_submit_button("Iniciar sesión", icon=":material/login:", key="iniciar_sesion")
             st.markdown('<div class="login-pie">🔒 Acceso registrado y monitoreado<br>'
                         '¿Problemas para entrar? Contacta al administrador</div>',
                         unsafe_allow_html=True)
@@ -366,25 +422,33 @@ if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
             nuevo = st.text_input("Nuevo usuario")
             clave = st.text_input("Contraseña", type="password")
             rol_nuevo = st.selectbox("Rol", ["analista", "administrador"])
-            crear = st.form_submit_button("Crear usuario")
+            crear = st.form_submit_button("Crear usuario", icon=":material/add:", key="crear_usuario")
         if crear:
             ok, mensaje = registrar_usuario(nuevo, clave, rol_nuevo)
             if ok:
                 st.success(mensaje)
             else:
                 st.error(mensaje)
-        st.dataframe(listar_usuarios(), use_container_width=True)
+        st.caption("Usuarios registrados")
+        for u in listar_usuarios():
+            nombre = html.escape(str(u["nombre_usuario"]))
+            rol = html.escape(str(u["rol"]))
+            st.markdown(
+                f'<div class="usuario-fila"><span>{nombre}<span>'
+                f'<span class="rol-chip rol-{rol}">{rol.capitalize()}</span></div',
+                unsafe_allow_html=True
+            )
                                    
 
 # Barra lateral
 with st.sidebar:
     st.markdown(f"""
-    <div class="side-card">     
-        <div class= "side-titulo">Sesión activa</div>
-        <div class= "side-usuario">{html.escape(st.session_state.usuario)}</div>
-        <span class="badge-rol">{html.escape(st.session_state.rol)}</span>
-    </div> """, unsafe_allow_html=True)
-    if st.button("Cerrar sesión", use_container_width=True): 
+<div class="side-card">
+    <div class="side-titulo">Sesión activa</div>
+    <div class="side-usuario">{html.escape(st.session_state.usuario)}</div>
+    <span class="badge-rol">{html.escape(st.session_state.rol)}</span>
+</div>""", unsafe_allow_html=True)
+    if st.button("Cerrar sesión",icon=":material/logout:", key="cerrar_sesion"): 
         st.session_state.clear()
         st.rerun()
     
@@ -510,18 +574,13 @@ if "eventos_guardados" not in st.session_state:
 
 st.markdown(f"""
 <div class="soc-header">
-    <div style="flex: 1; text-align: center;">
-        <div class="soc-title" style="justify-content: center; color: #F1F5F9;">Colmena CyberSOC <span style="color: #2DD4BF; border-radius: 12px; padding: 3px 10px; font-size: 0.8rem; background: rgba(45, 212, 191, 0.15); vertical-align: middle;">Modo activo</span></div>
-        <div class="soc subtitle">Plataforma Inteligente de Análisis de Logs y Triaje de Incidentes asistida por RAG & Gemini AI</div>
-    <div>
-    <img src="data:image/jpeg;base64, {imagen_base64('logo_app.jpeg')}"class="header-logo" style=height: 120px; width: auto;">
+<div style="flex: 1; text-align: center;">
+<div class="soc-title" style="justify-content: center; color: #F1F6F9;">Colmena CyberSOC <span class="badge-activo">Modo activo</span></div>
+<div class="soc-subtitle">Plataforma Inteligente de Análisis de logs y Triaje de Incidentes asistida por RAG & Gemini AI</div>
+<img src="data:image/jpeg;base64,{imagen_base64('logo_app.jpeg')}" class="header-logo" style="height: 120px; width: auto;">
 </div>
-
-
-   
 </div>
 """, unsafe_allow_html=True)
-    
 
 @st.fragment(run_every=30)
 def vigilar_sesion():
@@ -535,7 +594,7 @@ def vigilar_sesion():
         st.warning("Tu sesion se cerrará en menos de 2 minutos llegó a la duración máxima. Guarda tu trabajo")
     elif restante_inactividad <= MINUTOS_AVISO * 60:
         st.warning("Tu sesion se cerrará en menos de 2 minutos por inactividad")
-        if st.button("Seguir en la sesión", key="seguir_sesion"):
+        if st.button("Seguir en la sesión", icon=":material/timer:", key="seguir_en_la_sesion"):
             st.session_state.ultima_actividad = time.time()
             st.rerun() # recarga la app y quita el aviso
 vigilar_sesion()
@@ -561,7 +620,7 @@ with st.sidebar:
         </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="side-titulo">Opciones</div>', unsafe_allow_html=True)
-    if st.button("Limpiar historial del chat", use_container_width=True):
+    if st.button("Limpiar historial del chat", icon=":material/delete_history:", key="limpiar_historial_del_chat"):
         st.session_state.messages = []
         st.rerun()
 
@@ -735,6 +794,7 @@ with tab_informes:
         mime="application/pdf",
         on_click=registrar_informe,
         args=(resumen,),
+        icon=":material/picture_as_pdf:"
     )
    
     
@@ -756,6 +816,7 @@ with tab_informes:
             file_name=nombre,
             mime="application/pdf",
             key= "descargar_historial",
+            icon=":material/history:",
 
         )
     else:
@@ -774,7 +835,7 @@ with tab_chat:
         </svg>
         <div>
             <div class="ia-titulo">Asistente SOC</div>
-            <div class="ia-texto">Pregunta sobre la actividad del sistema y los eventos del sistema.</div>
+            <div class="ia-texto">Pregunta sobre la actividad  y los eventos del sistema.</div>
         <div>
     </div>""", unsafe_allow_html=True)
 
@@ -793,7 +854,7 @@ with tab_chat:
     if "messages" not in st.session_state:
         st.session_state.messages = [{
             "role": "assistant",
-            "content": "**Hola, soy el asistente SOC de Colmena Technologies.**\n\n Estoy aquí para ayudar puedo analizar los eventos registrados. Elige una consulta rápida o escribe tu pregunta para comenzar.",
+            "content": "**Hola, soy el asistente SOC de Colmena Technologies.**\n\n Estoy aquí para ayudar: puedo analizar los eventos registrados. Elige una consulta rápida o escribe tu pregunta para comenzar.",
         }]
     for message in st.session_state.messages:
         avatar = ":material/smart_toy:" if message["role"] == "assistant" else ":material/person:"
@@ -873,7 +934,7 @@ with tab_explorer:
  # Reporte SOC generado por Gemini con los resultados reales del del analisis
 with tab_report:
     st.markdown("#####  Exportar Reporte Ejecutivo del Incident Response")
-    if st.button("Generar Reporte SOC con IA", type="primary"):
+    if st.button("Generar Reporte SOC con IA", icon=":material/touch_app:" , key="generar_reporte_SOC_con_IA"):
         #Resultados de las detecciones que se le pasan a la IA 
         hallazgos = (
             f"Total de eventos analizados: {resumen['total']}\n"
@@ -914,6 +975,15 @@ with tab_report:
             "Descargar Reporte (md.)",
             data=st.session_state.reporte_ia,
             file_name=f"Reporte_SOC_Colmena_{datetime.now().strftime('%Y%m%d')}.md",
+            icon=":material/download"
+        )
+        st.download_button(
+            "Descargar en PDF",
+            data=generar_pdf_reporte_ia(st.session_state.reporte_ia),
+            file_name=f"repprte_ia_{datetime.now():%Y%m%d_%H%M}.pdf",
+            mime="application/pdf",
+            icon=":material/picture_as_pdf:",
+            key="descargar_reporte_pdf",
         )
 
 st.sidebar.caption(f"⏱️ Página completa en {(time.perf_counter() - inicio_pagina)* 1000:.0f}ms")    

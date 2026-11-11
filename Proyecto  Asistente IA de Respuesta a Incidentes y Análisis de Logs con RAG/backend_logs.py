@@ -190,3 +190,43 @@ def registrar_informe(resumen):
     crear_tablas()
     nombre = f"informe_{datetime.now():%Y%m%d_%H%M%S}.pdf"
     guardar_informe(nombre, generar_informe_pdf(resumen))
+
+# Cambia los simbolos raros que pone gemini por otros mas normales
+def limpiar_texto(texto):
+    """Quita simbolos que la letra helvetica no puede mostrar"""
+    cambios = cambios = {"•": "-", "–": "-", "—": "-", "“": '"', "”": '"', "‘": "'", "’": "'", "…": "..."}
+    for viejo, nuevo in cambios.items():
+        texto = texto.replace(viejo, nuevo)
+    return texto.encode("latin-1", "ignore").decode("latin-1")
+
+def generar_pdf_reporte_ia(texto):
+    """Convierte el reporte de la IA en n PDF con el mismo diseño que el informe"""
+    pdf = Informe()
+    pdf.subtitulo = "Reporte del Asistente SOC"
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(*AZUL)
+    pdf.cell(0, 10, "Reporte del Asistente SOC", ln=True)
+    pdf.set_text_color(*TEXTO)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 6, f"Generado: {datetime.now():%d/%m/%Y %H:%M}", ln=True)    
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "", 10)
+
+    for linea in limpiar_texto(texto).splitlines():
+        linea = linea.strip()
+        if not linea or set(linea) <= set("-*_"):
+            pdf.ln(2)
+            continue
+        if linea.startswith("#"):
+            titulo_seccion(pdf, linea.lstrip("#").strip().replace("**", ""))
+            continue
+        if linea.startswith("**") and linea.endswith("**") and linea.count("**") == 2:
+            titulo_seccion(pdf, linea.replace("**", ""))
+            continue
+        if linea.startswith(("-" , "* ")):
+            linea = " - " + linea[2:]
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, 5.5, linea, markdown=True, align="L", new_x="LMARGIN", new_y="NEXT")
+    return bytes(pdf.output())
