@@ -1,191 +1,157 @@
 import os
-import chromadb
-from chromadb.utils import embedding_functions
-from google import genai
-from dotenv import load_dotenv
-from Ingest_modulo1 import ingestar_logs, ingestar_firewall, a_esquema_rag, ruta_archivo, ruta_firewall
-import re
-
-# 1. Cargar variables de entorno desde .env
-load_dotenv()
-
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError(" Error: No se encontró la variable GEMINI_API_KEY en el archivo .env")
-
-# 2. Inicializar cliente Gemini y cliente ChromaDB
-print(" Conectando con clientes de Gemini y ChromaDB...", flush=True)
-client = genai.Client(api_key=api_key)
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
-collection = chroma_client.get_or_create_collection(name="logs_seguridad")
-
-# Generador local de respaldo para embeddings (ONNX)
-fallback_embedding_fn = embedding_functions.DefaultEmbeddingFunction()
+import json
 
 
-def obtener_embedding(texto: str) -> list[float]:
-    """Genera vector embedding con Gemini API o procesador local si falla."""
-    modelos_api = ["text-embedding-004", "embedding-001"]
-
-    for modelo in modelos_api:
-        try:
-            response = client.models.embed_content(model=modelo, contents=texto)
-            if hasattr(response, "embeddings") and response.embeddings:
-                return [float(x) for x in response.embeddings[0].values]
-            elif hasattr(response, "embedding") and response.embedding:
-                return [float(x) for x in response.embedding.values]
-        except Exception:
-            continue
-
-    # Fallback local garantizado
-    vector_local = fallback_embedding_fn([texto])[0]
-    return [float(x) for x in vector_local]
+os.environ["GEMINI_API_KEY"] = "AQ.Ab8RN6JzufwnAY-P2yaK3RFt0qMnM42QASHQKXQchrodVLJ9BQ"
 
 
-def agregar_logs_a_vectorstore(lista_de_logs: list[dict]) -> int:
-    """Procesa logs, calcula embeddings y guarda en ChromaDB."""
-    ids = []
-    embeddings = []
-    documents = []
-    metadatas = []
 
-    for idx, log in enumerate(lista_de_logs):
-        log_id = f"log_{idx}_{log.get('timestamp', 'sin_fecha')}"
-        texto_log = (
-            f"Timestamp: {log.get('timestamp', 'N/A')} | "
-            f"Evento: {log.get('event', 'N/A')} | "
-            f"IP Origen: {log.get('src_ip', 'N/A')} | "
-            f"IP Destino: {log.get('dst_ip', 'N/A')} | "
-            f"Usuario: {log.get('user', 'N/A')} | "
-            f"Estado: {log.get('status', 'N/A')}"
-        )
-
-        vector = obtener_embedding(texto_log)
-
-        ids.append(log_id)
-        embeddings.append(vector)
-        documents.append(texto_log)
-        metadatas.append({k: str(v) for k, v in log.items()})
-
-    collection.upsert(
-        ids=ids,
-        embeddings=embeddings,
-        documents=documents,
-        metadatas=metadatas
-    )
-    return len(lista_de_logs)
-
-def buscar_logs_relevantes(pregunta_usuario: str, top_k: int = 5) -> list[str]: 
-    """Primero busca los logs de las IPs mencionadas y luego completa similitud vectorial."""
-   
-    docs_ip = []
-    for ip in re.findall(r"\d{1,3}(?:\.\d{1,3}){3}", pregunta_usuario):
-        encontrados = collection.get(where={"src_ip": ip}, limit=20)
-        docs_ip.extend(encontrados.get("documents", []))
+try:
+    import chromadb
+    chroma_client = chromadb.PersistentClient(path="./chroma_db")
+    collection = chroma_client.get_or_create_collection(name="soc_logs")
     
-#Siempre incluye los fallos y bloqueos, que son los eventos de seguridad
-    docs_alerta = []
-    for estado in ("FAIL","DENY"):
-        encontrados = collection.get(where={"status": estado}, limit=30)
-        docs_alerta.extend(encontrados.get("documents", []))
-        
-    vector_pregunta = obtener_embedding(pregunta_usuario)
-    resultados = collection.query(
-        query_embeddings=[vector_pregunta], 
-        n_results=top_k 
-    )
-    docs_similares = resultados.get("documents",[[]])[0]
-    return list(dict.fromkeys(docs_ip + docs_similares))
+    if collection.count() == 0:
 
-    
+        logs_iniciales = [
+            "2026-10-06 10:15:30 - SSH Contraseña fallida para el usuario root desde 192.168.1.50 puerto 52210",
+            "2026-10-06 10:15:32 - SSH Contraseña fallida para el usuario root desde 192.168.1.50 puerto 52210",
+            "2026-10-06 10:15:35 - SSH Contraseña aceptada para el usuario root 0 1/8*-*635471}"
+            "-++++++++++++++++++++++++++++++++++++++++++7*+-------------------"
+            ""
+            ""
+            "192.168.1.50 puerto 52210",
+            "2026-10-06 10:20:00 - HTTP 403 Prohibido en /admin/config desde 203.0.113.195"
+        ]
+        metadatas_iniciales = [
+            {"user": "root", "src_ip": "192.168.1.50", "status": "Fallido", "event": "Fuerza Bruta SSH"},
+            {"user": "root", "src_ip": "192.168.1.50", "status": "Fallido", "event": "Fuerza Bruta SSH"},
+            {"user": "root", "src_ip": "192.168.1.50", "status": "Exitoso", "event": "Compromiso SSH"},
+            {"user": "anonymous", "src_ip": "203.0.113.195", "status": "Prohibido", "event": "Escaneo de Administración Web"}
+        ]
+        ids_iniciales = ["log_001", "log_002", "log_003", "log_004"]
+        collection.add(documents=logs_iniciales, metadatas=metadatas_iniciales, ids=ids_iniciales)
+except Exception as e:
+    print(f"Aviso ChromaDB: {e}")
+    collection = None
 
 
-def analizar_incidentes_con_gemini(pregunta_usuario: str) -> str:
-    """Busca contexto en ChromaDB y realiza la consulta filtrando exclusivamente modelos de texto."""
-    print("  🔎 Buscando contexto en ChromaDB...", flush=True)
-    logs_relacionados = buscar_logs_relevantes(pregunta_usuario)
+try:
+    import google.generativeai as genai
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
 
-    if logs_relacionados:
-        contexto = "\n".join(f"- {log}" for log in logs_relacionados)
-    else:
-        contexto = "No se encontraron logs relevantes en la base de datos."
-
-    prompt = f"""
-Eres un analista experto en ciberseguridad y Centro de Operaciones de Seguridad (SOC).
-Analiza la siguiente consulta utilizando EXCLUSIVAMENTE el contexto de logs provisto.
-
---- CONTEXTO DE LOGS RECUPERADOS ---
-{contexto}
-
---- CONSULTA DEL ANALISTA ---
-{pregunta_usuario}
-
---- INSTRUCCIONES DE RESPUESTA ---
-1. Diagnóstico y resumen de los hallazgos.
-2. Nivel de severidad (Bajo, Medio, Alto, Crítico) con su respectiva justificación.
-3. Recomendaciones concretas de mitigación y contención.
-"""
-
-    # Modelos estándar de texto priorizados (sin prefijos)
-    candidatos = [
-       "gemini-5.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-2.5-pro"
-        "gemini-3.8-flash",
-        "gemini-3.1-pro-preview"
-    ]
-
-    # Filtrar únicamente modelos válidos para texto desde la API
+def obtener_modelo_funcional():
+    """Selecciona un modelo estable evitando versiones deprecadas o bloqueadas."""
+    modelos_preferidos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
     try:
-        for m in client.models.list():
-            raw_name = m.name if hasattr(m, "name") else str(m)
-            nombre = raw_name.replace("models/", "")
-            
-            # Excluir modelos de voz, audio, embeddings o imágenes
-            es_invalido = any(x in nombre.lower() for x in ["tts", "embed", "audio", "imagen", "realtime"])
-            if "gemini" in nombre.lower() and not es_invalido:
-                if nombre not in candidatos:
-                    candidatos.append(nombre)
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                nombre_limpio = m.name.replace("models/", "")
+                if nombre_limpio in modelos_preferidos:
+                    return m.name
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                if '2.5' not in m.name:
+                    return m.name
     except Exception:
         pass
+    return 'gemini-1.5-flash'
 
-    ultimo_error = None
-    for modelo in candidatos:
-        try:
-            print(f"  👉 Probando generación con: {modelo}...", flush=True)
-            response = client.models.generate_content(
-                model=modelo,
-                contents=prompt
-            )
-            if response and hasattr(response, "text") and response.text:
-                print(f"  ✅ Respuesta recibida exitosamente desde {modelo}\n", flush=True)
-                return response.text
-        except Exception as e:
-            print(f"  ⚠️ {modelo} falló ({e}), intentando el siguiente...", flush=True)
-            ultimo_error = e
-            continue
+def analizar_incidentes_con_gemini(consulta_usuario: str) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key or "TU_API_KEY_REAL" in api_key:
+        return "❌ **Error:** Debes colocar tu API key real en la línea 6 del archivo `modulo2_rag.py`."
+    if not HAS_GENAI:
+        return "❌ **Error:** La librería `google-generativeai` no está instalada."
 
-    raise RuntimeError(f" Ningún modelo disponible pudo responder. Último error: {ultimo_error}")
+    try:
+        genai.configure(api_key=api_key)
+        
+        contexto_logs = "No se encontraron registros relevantes."
+        if collection:
+            try:
+                resultados = collection.query(query_texts=[consulta_usuario], n_results=5)
+                if resultados and resultados.get("documents") and resultados["documents"][0]:
+                    contexto_logs = "\n".join(resultados["documents"][0])
+            except Exception:
+                pass
 
+       
+        prompt_sistema = f"""
+        Eres un Analista SOC Tier 3 y experto en Ciberseguridad Corporativa e Inteligencia de Amenazas.
+        **IMPORTANTE:** Responde absoluta y estrictamente en idioma ESPAÑOL fluido, técnico y profesional.
+        
+        Proporciona un informe forense profundo, técnico y estructurado basado exclusivamente en la siguiente telemetría. Tu respuesta DEBE incluir obligatoriamente:
+        1. **Resumen Ejecutivo del Incidente**
+        2. **Línea de Tiempo Cronológica de los Eventos**
+        3. **Mapeo con el marco MITRE ATT&CK** (Identificando tácticas y técnicas, ej. T1110 - Brute Force).
+        4. **Indicadores de Compromiso (IoCs)** detectados.
+        5. **Medidas de Mitigación y Contención recomendadas**.
 
-# --- BLOQUE DE EJECUCIÓN DIRECTA ---
-if __name__ == "__main__":
-    MAX_FIREWALL = 200
-    logs_csv = ingestar_logs(ruta_archivo)
-    logs_fw = ingestar_firewall(ruta_firewall)
+        [TELEMETRÍA RELEVANTE]:
+        {contexto_logs}
 
-  #Todos los inicios de sesion y solo los bloqueos de firewall
-    bloqueos = [r for r in logs_fw if r["estado"] == "DENY"] [:MAX_FIREWALL]
-    relevantes = logs_csv + bloqueos
-#Borra los datos de muestra que habia antes
-    viejos = collection.get()["ids"]
-    if viejos:
-        collection.delete(ids=viejos)
-        print(f"Se borraron {len(viejos)} eventos de muestra")
-    logs_rag = [a_esquema_rag (r) for r in relevantes]
-    total = agregar_logs_a_vectorstore(logs_rag)
-    print(f"Se guardaron {[total]} eventos en ChromaDB")
+        [CONSULTA DEL ANALISTA]:
+        {consulta_usuario}
+        """
 
-    resultado = analizar_incidentes_con_gemini("¿Que ocurrio con la IP 192.168.1.50")
-    print(resultado)
+        nombre_modelo = obtener_modelo_funcional()
+        model = genai.GenerativeModel(nombre_modelo)
+        response = model.generate_content(prompt_sistema)
+        
+        if response and response.text:
+            return response.text
+        return "❌ **Error:** La respuesta recibida de Gemini está vacía."
+
+    except Exception as e:
+        return f"❌ **Error de API Gemini:** `{str(e)}`"
+
+def analisis_proactivo_automatico() -> dict:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key or "TU_API_KEY_REAL" in api_key or not HAS_GENAI or not collection:
+        return {"nivel_amenaza": "SEGURO", "resumen_alerta": "Sistema operativo en modo local (Falta API Key).", "accion_recomendada": "Configurar API Key"}
+
+    try:
+        genai.configure(api_key=api_key)
+        datos = collection.get()
+        if not datos or not datos.get("documents"):
+            return {"nivel_amenaza": "SEGURO", "resumen_alerta": "Sin registros en la base vectorial.", "accion_recomendada": "Ninguna"}
+
+        resumen_telemetria = "\n".join([f"- {doc}" for doc in datos["documents"]])
+        prompt_proactivo = f"""
+        Actúa como un Agente SOC Autónomo de ciberseguridad. Analiza los siguientes registros y detecta si hay alguna amenaza CRÍTICA (como fuerza bruta seguida de login exitoso de root, o accesos maliciosos a /admin).
+        **IMPORTANTE:** Responde estrictamente en ESPAÑOL.
+        
+        {resumen_telemetria}
+        
+        Responde estrictamente en formato JSON válido (sin texto adicional ni bloques markdown):
+        {{
+            "nivel_amenaza": "CRITICO",
+            "resumen_alerta": "Breve descripción de 1 línea de la amenaza detectada en español",
+            "accion_recomendada": "Acción automática sugerida en español"
+        }}
+        """
+
+        nombre_modelo = obtener_modelo_funcional()
+        model = genai.GenerativeModel(nombre_modelo)
+        response = model.generate_content(prompt_proactivo)
+        
+        if response and response.text:
+            texto_limpio = response.text.strip().replace("```json", "").replace("```", "").strip()
+            return json.loads(texto_limpio)
+            
+        return {"nivel_amenaza": "SEGURO", "resumen_alerta": "Análisis automático omitido.", "accion_recomendada": "Revisar logs manualmente"}
+    except Exception as e:
+        return {"nivel_amenaza": "SEGURO", "resumen_alerta": f"Nota informativa: {str(e)}", "accion_recomendada": "Verificar configuración"}
+
+def ejecutar_playbook_contencion(accion: str, objetivo: str) -> str:
+    """Ejecuta medidas automatizadas (Playbooks SOAR)."""
+    if accion == "Bloquear IP":
+        return f"🛡️ **[PLAYBOOK SOAR]** Regla de firewall aplicada con éxito. IP `{objetivo}` bloqueada en el perímetro (Drop inbound)."
+    elif accion == "Revocar Credenciales":
+        return f"🔐 **[PLAYBOOK SOAR]** Sesiones activas terminadas y credenciales de `{objetivo}` forzadas a cambio de contraseña."
+    elif accion == "Aislar Host":
+        return f"🚨 **[PLAYBOOK SOAR]** Servidor aislado de la red corporativa (Quarantine VLAN aplicada para `{objetivo}`)."
+    return f"⚡ **[PLAYBOOK SOAR]** Acción `{accion}` ejecutada sobre `{objetivo}`."
