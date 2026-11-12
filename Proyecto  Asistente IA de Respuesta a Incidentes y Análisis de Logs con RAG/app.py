@@ -866,7 +866,7 @@ with tab_chat:
         with st.chat_message("user", avatar=":material/person:"):
             st.markdown(prompt_a_procesar)
 
-        with st.chat._message("assistant", avatar=":material/smart_toy:"):
+        with st.chat_message("assistant", avatar=":material/smart_toy:"):
             with st.spinner("Analizando eventos con ChromaDB y Gemini..."):
                 try:
                     respuesta = analizar_incidentes_con_gemini(prompt_a_procesar)
@@ -971,7 +971,7 @@ with tab_report:
             "Descargar Reporte (md.)",
             data=st.session_state.reporte_ia,
             file_name=f"Reporte_SOC_Colmena_{datetime.now().strftime('%Y%m%d')}.md",
-            icon=":material/download"
+            icon=":material/download:"
         )
         st.download_button(
             "Descargar en PDF",
