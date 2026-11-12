@@ -113,8 +113,8 @@ La vigilancia automatica se ejecuta con el programador de tareas de windows, con
 Comprueba las detecciones con casos conocidos. Resultado esperado: `21 de 21 pruebas pasaron`.
 
 ## Autores 
-Melanny: backend y ciberseguridad
-Ethan: frontend e IA
+Melanny
+Ethan
 
 
 

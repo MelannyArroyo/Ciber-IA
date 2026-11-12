@@ -417,7 +417,7 @@ if st.session_state.rol is None:
 
     #Administrar usuarios
 if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
-    with st.sidebar.expander("Administrar usarios"):
+    with st.sidebar.expander("Administrar usuarios", icon=":material/person_add:"):
         with st.form("nuevo_usuario", clear_on_submit=True):
             nuevo = st.text_input("Nuevo usuario")
             clave = st.text_input("Contraseña", type="password")
@@ -442,12 +442,6 @@ if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
 
 # Barra lateral
 with st.sidebar:
-    st.markdown(f"""
-<div class="side-card">
-    <div class="side-titulo">Sesión activa</div>
-    <div class="side-usuario">{html.escape(st.session_state.usuario)}</div>
-    <span class="badge-rol">{html.escape(st.session_state.rol)}</span>
-</div>""", unsafe_allow_html=True)
     if st.button("Cerrar sesión",icon=":material/logout:", key="cerrar_sesion"): 
         st.session_state.clear()
         st.rerun()
@@ -574,11 +568,13 @@ if "eventos_guardados" not in st.session_state:
 
 st.markdown(f"""
 <div class="soc-header">
+<div style="width: 170px;"></div>
 <div style="flex: 1; text-align: center;">
 <div class="soc-title" style="justify-content: center; color: #F1F6F9;">Colmena CyberSOC <span class="badge-activo">Modo activo</span></div>
 <div class="soc-subtitle">Plataforma Inteligente de Análisis de logs y Triaje de Incidentes asistida por RAG & Gemini AI</div>
 <img src="data:image/jpeg;base64,{imagen_base64('logo_app.jpeg')}" class="header-logo" style="height: 120px; width: auto;">
 </div>
+<div style="width: 170px; align-self: flex-start;"><div class="side-card"><div class="side-titulo">Sesión activa</div><div class="side-usuario">{html.escape(st.session_state.usuario)}</div><span class="badge-rol">{html.escape(st.session_state.rol)}</span></div><div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -630,7 +626,7 @@ with st.sidebar:
         <div class="side-usuario">Melanny Arroyo</div>
         <div class"side-usuario>Ethan Rojas</div"
         </div>
-        <div class="login-footer">Colmena Technologies . Prática profesional</div>
+        <div class="login-footer">Colmena Technologies . Práctica profesional</div>
         """, unsafe_allow_html=True)
 
 
@@ -820,7 +816,7 @@ with tab_informes:
 
         )
     else:
-        st.info("Todavia no hay informes guardados")
+        st.info("Todavía no hay informes guardados")
 
 # --- PESTAÑA 1: CHATBOT SOC ---
 with tab_chat:
