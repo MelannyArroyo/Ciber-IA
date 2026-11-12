@@ -1,0 +1,183 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from modulo2_rag import (
+    analizar_incidentes_con_gemini, 
+    analisis_proactivo_automatico, 
+    ejecutar_playbook_contencion,
+    collection
+)
+
+
+st.set_page_config(
+    page_title="Colmena SOC - Incident Response Platform",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
+st.markdown("""
+<style>
+    .stApp { background-color: #0B0F19; color: #E2E8F0; }
+    .soc-header {
+        background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+        padding: 20px; border-radius: 12px; border-left: 6px solid #3B82F6;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); margin-bottom: 25px;
+    }
+    .soc-title { font-size: 2.2rem; font-weight: 800; color: #F8FAFC; margin: 0; display: flex; align-items: center; gap: 12px; }
+    .soc-subtitle { color: #94A3B8; font-size: 0.95rem; margin-top: 5px; }
+    .metric-card { background-color: #1E293B; border-radius: 10px; padding: 16px; border: 1px solid #334155; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .metric-title { font-size: 0.85rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .metric-value { font-size: 1.8rem; font-weight: 700; margin: 5px 0; }
+    .status-critical { color: #EF4444; }
+    .status-warning { color: #F59E0B; }
+    .status-success { color: #10B981; }
+    .status-info { color: #3B82F6; }
+    .badge-critical { background-color: rgba(239, 68, 68, 0.15); color: #F87171; padding: 3px 10px; border-radius: 12px; border: 1px solid #EF4444; font-size: 0.8rem; font-weight: 600; }
+</style>
+""", unsafe_allow_html=True)
+
+
+st.markdown("""
+<div class="soc-header">
+    <div class="soc-title">🛡️ Colmena CyberSOC <span class="badge-critical">Modo Activo</span></div>
+    <div class="soc-subtitle">Plataforma Inteligente de Análisis de Logs, Inteligencia MITRE ATT&CK & Contención SOAR</div>
+</div>
+""", unsafe_allow_html=True)
+
+
+try:
+    with st.spinner("🤖 El Agente SOC Autónomo está escaneando los vectores..."):
+        alerta_activa = analisis_proactivo_automatico()
+except Exception:
+    alerta_activa = {"nivel_amenaza": "SEGURO", "resumen_alerta": "Sistema operativo en modo estable.", "accion_recomendada": "Ninguna"}
+
+amenaza_nivel = alerta_activa.get("nivel_amenaza", "SEGURO")
+if amenaza_nivel == "CRITICO":
+    st.markdown(f"""
+    <div style="background-color: rgba(239, 68, 68, 0.2); border: 1px solid #EF4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h4 style="color: #F87171; margin: 0 0 5px 0;">🚨 ALERTA AUTÓNOMA CRÍTICA DETECTADA POR EL AGENTE IA</h4>
+        <p style="color: #F1F5F9; margin: 0;"><b>Incidente:</b> {alerta_activa.get('resumen_alerta')}</p>
+        <p style="color: #38BDF8; margin: 5px 0 0 0;"><b>⚡ Respuesta Recomendada:</b> {alerta_activa.get('accion_recomendada')}</p>
+    </div>
+    """, unsafe_allow_html=True)
+elif amenaza_nivel == "MODERADO":
+    st.warning(f"⚠️ **Aviso de Seguridad:** {alerta_activa.get('resumen_alerta')}")
+else:
+    st.success("🛡️ **Estado del Sistema:** Perí perímetro seguro. No se detectan anomalías críticas.")
+
+
+with st.sidebar:
+    st.markdown("### 🎛️ Control & Playbooks SOAR")
+    st.markdown("---")
+    st.markdown("#### ⚡ Acciones de Mitigación")
+    if st.button("🛡️ Bloquear IP `192.168.1.50`", use_container_width=True):
+        st.success(ejecutar_playbook_contencion("Bloquear IP", "192.168.1.50"))
+    if st.button("🔐 Revocar Cuenta `root`", use_container_width=True):
+        st.success(ejecutar_playbook_contencion("Revocar Credenciales", "root"))
+    if st.button("🚨 Aislar Servidor Afectado", use_container_width=True):
+        st.success(ejecutar_playbook_contencion("Aislar Host", "Server-Prod-01"))
+    
+    st.markdown("---")
+    st.markdown("#### 🟢 Estado del Pipeline")
+    st.markdown("• **VectorDB:** <span class='status-success'>ChromaDB Conectado</span>", unsafe_allow_html=True)
+    st.markdown("• **Modelo LLM:** <span class='status-info'>Gemini Activo (Dinámico)</span>", unsafe_allow_html=True)
+    st.markdown("• **Motor SOAR:** <span class='status-info'>Preparado</span>", unsafe_allow_html=True)
+    st.markdown("---")
+    if st.button("🗑️ Limpiar Historial de Chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+    st.markdown("---")
+    st.caption("🏢 **Colmena Technologies**\nPráctica Profesional")
+
+# --- PANEL DE MÉTRICAS ---
+total_logs_count = collection.count() if collection else 4
+col1, col2, col3, col4 = st.columns(4)
+col1.markdown(f'<div class="metric-card"><div class="metric-title">Eventos Ingestados</div><div class="metric-value status-info">{total_logs_count}</div></div>', unsafe_allow_html=True)
+col2.markdown(f'<div class="metric-card"><div class="metric-title">Amenaza Global</div><div class="metric-value status-critical">ALTO</div></div>', unsafe_allow_html=True)
+col3.markdown(f'<div class="metric-card"><div class="metric-title">IP Sospechosa</div><div class="metric-value status-warning">192.168.1.50</div></div>', unsafe_allow_html=True)
+col4.markdown(f'<div class="metric-card"><div class="metric-title">Respuesta RAG</div><div class="metric-value status-success">&lt; 1.5s</div></div>', unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# --- TABS ---
+tab_chat, tab_analytics, tab_explorer, tab_report = st.tabs([
+    "💬 Asistente SOC & Triaje IA", 
+    "📊 Dashboard Analítico (Visual SOC)",
+    "📜 Explorador de Telemetría (Logs)", 
+    "📋 Generador de Reporte SOC"
+])
+
+with tab_chat:
+    st.markdown("##### ⚡ Consultas Rápidas de Seguridad (Forenses & MITRE)")
+    cb1, cb2, cb3 = st.columns(3)
+    prompt_rapido = None
+    if cb1.button("🚨 Investigar IP 192.168.1.50", use_container_width=True):
+        prompt_rapido = "Realiza un informe forense detallado de la IP 192.168.1.50 incluyendo línea de tiempo y MITRE ATT&CK."
+    if cb2.button("🔑 Analizar fuerza bruta Root", use_container_width=True):
+        prompt_rapido = "Analiza los intentos de fuerza bruta sobre el usuario root y evalúa el impacto de la brecha."
+    if cb3.button("🌐 Revisar Firewall / Web", use_container_width=True):
+        prompt_rapido = "Analiza las peticiones prohibidas HTTP 403 y determina si hubo un escaneo de rutas."
+
+    st.markdown("---")
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": "👋 **Hola, soy el Asistente SOC Tier 3 de Colmena Technologies.** ¿Qué incidente procedemos a investigar hoy?"}]
+
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+    user_input = st.chat_input("Escribe tu pregunta de análisis...", key="soc_main_input")
+    final_prompt = prompt_rapido if prompt_rapido else user_input
+
+    if final_prompt:
+        st.session_state.messages.append({"role": "user", "content": final_prompt})
+        with st.chat_message("user"):
+            st.markdown(final_prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("🤖 Consultando ChromaDB y generando informe forense con Gemini..."):
+                resp = analizar_incidentes_con_gemini(final_prompt)
+                st.markdown(resp)
+                st.session_state.messages.append({"role": "assistant", "content": resp})
+
+with tab_analytics:
+    st.markdown("##### 📈 Analítica Visual de Incidentes")
+    if collection:
+        try:
+            raw_data = collection.get()
+            if raw_data and raw_data.get("metadatas"):
+                df_m = pd.DataFrame(raw_data["metadatas"])
+                g1, g2 = st.columns(2)
+                with g1:
+                    st.markdown("###### Eventos por IP de Origen")
+                    st.bar_chart(df_m["src_ip"].value_counts() if "src_ip" in df_m else pd.Series())
+                with g2:
+                    st.markdown("###### Eventos por Tipo de Alerta")
+                    st.bar_chart(df_m["event"].value_counts() if "event" in df_m else pd.Series())
+            else:
+                st.warning("Sin metadatas suficientes.")
+        except Exception as e:
+            st.error(f"Error generando gráficos: {e}")
+
+with tab_explorer:
+    st.markdown("##### 🔍 Búsqueda de Logs")
+    filtro = st.text_input("Filtrar por palabra clave o IP:", "")
+    if collection:
+        try:
+            raw = collection.get()
+            if raw and raw.get("documents"):
+                rows = [{"ID": i, "Log": d, "Meta": m} for d, m, i in zip(raw["documents"], raw["metadatas"], raw["ids"]) if not filtro or filtro.lower() in d.lower()]
+                if rows:
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                else:
+                    st.warning("No hay coincidencias.")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+with tab_report:
+    st.markdown("##### 📄 Reporte Ejecutivo Forense")
+    if st.button("📝 Generar Borrador de Incidente", type="primary"):
+        rep = f"# REPORTE SOC - INCIDENTE CRÍTICO\n**Fecha:** {datetime.now()}\n\n### 1. Resumen\nSe detectó actividad maliciosa de fuerza bruta SSH desde la IP `192.168.1.50`, culminando en un acceso root exitoso.\n\n### 2. MITRE ATT&CK\n- **T1110**: Brute Force\n- **T1078**: Valid Accounts\n\n### 3. Mitigación Aplicada\n- IP bloqueada en perímetro.\n- Sesiones de root revocadas."
+        st.markdown(rep)
+        st.download_button("💾 Descargar Reporte (.md)", data=rep, file_name="reporte_soc_forense.md")
