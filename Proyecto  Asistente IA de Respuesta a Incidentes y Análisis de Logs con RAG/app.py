@@ -5,7 +5,7 @@ import time
 import html
 import base64
 from datetime import datetime
-from modulo2_rag import analizar_incidentes_con_gemini, collection
+from modulo2_rag import analizar_incidentes_con_gemini, collection 
 from Ingest_modulo1 import (
     ingestar_logs,
     ingestar_firewall,
@@ -59,35 +59,35 @@ st.markdown("""
 .stButton button,
 .stDownloadButton button,
 .stFormSubmitButton button {
-background: rgba(34, 211, 238, 0..0) !important;
-border: 1px solid rgba(34, 211, 238, 0.035) !important;
+background: rgba(53, 7, 74) !important;
+border: 1px solid rgba(34, 211, 238, 0.35) !important;
 color: #22D3EE !important;
 border-radius: 999px !important;
 font-size: 0.85rem;
 }
 .stButton button:hover,
 .stDownloadButton button:hover {
-background: rgba(34, 211, 238, 0.18) !important;
+background: rgba(34, 211, 238, 0.8) !important;
 border-color: #22D3EE !important;
 color: #FFFFFF !important;
 }
 .usuario-fila {
 display:  flex;
-justify-content: space.between;
+justify-content: space-between;
 align-items: center;
 gap: 12px;
 background: #131D2E;
 border: 1px solid #263345;
 border-radius: 10px;
 padding: 12px 14px;
-margin-bottom: 10px
+margin-bottom: 10px;
 font-size: 0.85rem;
 color: #F1F5F9;
 }
 .usuario-fila span:first-child {
 display: block;
-font-weight: 600
-margin-botton: 8px;
+font-weight: 600;
+margin-bottom: 8px;
 }
 .rol-chip {
 font-size: 0.7rem;
@@ -127,7 +127,7 @@ margin-bottom: 6px;
 /* Encabezado*/
 .header-logo { height: 90px; border-radius: 14px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
 .badge-activo {
-    background: rgba(45, 212, 191, 0.12); color #2DD4BF;
+    background: rgba(45, 212, 191, 0.12); color: #2DD4BF;
     border: 1px solid rgba(45,212,191, 0.4);
     padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight:600;
 }
@@ -282,28 +282,19 @@ border-right: 1px solid #263345;}
         color: #94A3B8;
         font-weight: 600;
     }
-    .stTabs [aria-selected="true"] {
-        background-color: #1E293B !important;
-        color: #38BDF8 !important;
-        border-bottom: 2px solid #38BDF8;
-    }
-    .stTaps [aria-selected="true"] {
-    background-color: #1E29RB ! important;
-    color: #38BDF8 ! important;
-    border-bottom: 2px solid #38BDF8;
-    }
+
     /* --- Detecciones ---*/
     .sev-card {
     border: 1px solid #2A3A52;
     border-radius: 10px;
-    pedding: 16px 18px;
+    padding: 16px 18px;
     text-align: center;
     }
     .sev-label {
     font-size: 0.8rem;
     font-weight: 600;
     color: #CBD5E1;
-    text-transform: upper case;
+    text-transform: uppercase;
     letter-spacing: 0.08em;
     }
     .sev-dot {
@@ -434,8 +425,8 @@ if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
             nombre = html.escape(str(u["nombre_usuario"]))
             rol = html.escape(str(u["rol"]))
             st.markdown(
-                f'<div class="usuario-fila"><span>{nombre}<span>'
-                f'<span class="rol-chip rol-{rol}">{rol.capitalize()}</span></div',
+                f'<div class="usuario-fila"><span>{nombre}</span>'
+                f'<span class="rol-chip rol-{rol}">{rol.capitalize()}</span></div>',
                 unsafe_allow_html=True
             )
                                    
@@ -549,6 +540,16 @@ def lista_detecciones(resumen, est_web, web):
     orden = {"ALTO": 0, "MEDIO": 1, "INFORMATIVO": 2}
     filas.sort(key=lambda f: orden.get(f["Severidad"], 1))
     return filas 
+
+def contexto_para_ia(detecciones, resumen):
+    """Resume las detecciones de la app en texto para que la IA las use"""
+    lineas = [f"Total de eventos analizados {resumen['total']}"]
+    for d in detecciones[:30]:
+        lineas.append(
+            f"- [{d['Severidad']}] {d['Tipo']} | Fuente: {d['Fuente']} "
+            f"| Origen: {d['Origen']} | {d['Detalle']}"
+        )
+    return "\n".join(lineas)
 
 inicio_carga = time.perf_counter() # Cronometro para medi cuanto tarda en cargar
 logs_cvs, logs_fw, web, resumen, est_web = cargar_datos ()
@@ -852,30 +853,43 @@ with tab_chat:
             "role": "assistant",
             "content": "**Hola, soy el asistente SOC de Colmena Technologies.**\n\n Estoy aquí para ayudar: puedo analizar los eventos registrados. Elige una consulta rápida o escribe tu pregunta para comenzar.",
         }]
-    for message in st.session_state.messages:
-        avatar = ":material/smart_toy:" if message["role"] == "assistant" else ":material/person:"
-        with st.chat_message(message["role"], avatar=avatar):
-            st.markdown(message["content"])
+    chat = st.container() # Es la caja de mensajes, queda arriba del cuadro de pregunta
+    with chat:
+        for message in st.session_state.messages:
+            avatar = ":material/smart_toy:" if message["role"] == "assistant" else ":material/person:"
+            with st.chat_message(message["role"], avatar=avatar):
+                st.markdown(message["content"])
 
-    # Pregunta escrita o boton rápido
+    # Pregunta escrita o boton rapido
     user_input = st.chat_input("Escribe tu pregunta (ej: ¿qué incidentes críticos ocurrieron hoy?)", key="soc_main_input")
     prompt_a_procesar = prompt_rapido if prompt_rapido else user_input
 
     if prompt_a_procesar:
-        st.session_state.messages.append({"role": "user", "content": prompt_a_procesar})
-        with st.chat_message("user", avatar=":material/person:"):
-            st.markdown(prompt_a_procesar)
+        with chat:
+            st.session_state.messages.append({"role": "user", "content": prompt_a_procesar})
+            with st.chat_message("user", avatar=":material/person:"):
+                st.markdown(prompt_a_procesar)
 
-        with st.chat_message("assistant", avatar=":material/smart_toy:"):
-            with st.spinner("Analizando eventos con ChromaDB y Gemini..."):
-                try:
-                    respuesta = analizar_incidentes_con_gemini(prompt_a_procesar)
-                    st.markdown(respuesta)
+            with st.chat_message("assistant", avatar=":material/smart_toy:"):
+                     
+                try: 
+                    with st.spinner("Analizando eventos con ChromaDB y Gemini..."):
+                        partes = analizar_incidentes_con_gemini(
+                            prompt_a_procesar, contexto_para_ia(detecciones, resumen), stream=True
+                        )
+                    respuesta = st.write_stream(partes) #Muestra el texto mientras llega 
                     st.session_state.messages.append({"role": "assistant", "content": respuesta})
                 except Exception as e:
-                    err = f"**Error de procesamiento:** {e}"
+                    err = f"**Error de procesamiento** {e}"
                     st.error(err)
-                    st.session_state.messages.append({"role": "assistant", "content": err})
+                    st.session_state.messages.append({"role": "assistant", "content": err}) 
+                
+        
+
+        
+
+
+      
  
 # EXPLORADOR DE LOGS una sola tabla con todas las fuentes 
 with tab_explorer:
@@ -952,7 +966,7 @@ with tab_report:
         )
         with st.spinner("Generando reporte con Gemini..."):
             try:
-                cuerpo = analizar_incidentes_con_gemini(pregunta)
+                cuerpo = analizar_incidentes_con_gemini(pregunta, contexto_para_ia(detecciones, resumen), modo="reporte")
                 fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 #Se guarda en la sesion para que no se pierda al descargar
                 st.session_state.reporte_ia = (
