@@ -24,7 +24,7 @@ FORMULARIO = """
 """
 def tipo_dispositivo(agente):
     """Dice si el acceso viene de un telefono o de una computadora"""
-    if "android" in agente.lower() or "iPhone" in agente.lower ():
+    if "android" in agente.lower() or "iphone" in agente.lower ():
         return "TELEFONO"
     return "COMPUTADORA"
 

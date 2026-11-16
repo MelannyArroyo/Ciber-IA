@@ -134,7 +134,7 @@ def test_varios_dispositivos_detectado():
     registros = [
         {"ip": "127.0.0.1", "usuario": "ana", "estado": "OK", "tiempo": BASE,
          "correo_principal": "ana@correo.com", "dispositivo": "COMPUTADORA"},
-         {"ip": "192.168..1.73", "usuario": "ana", "estado": "OK", "tiempo": BASE + timedelta(minutes=5),
+         {"ip": "192.168.1.73", "usuario": "ana", "estado": "OK", "tiempo": BASE + timedelta(minutes=5),
           "correo_principal": "ana@correo.com", "dispositivo": "TELEFONO"},
     ]
     assert detectar_varios_dispositivos(registros) == ["ana@correo.com"]

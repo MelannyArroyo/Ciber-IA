@@ -347,7 +347,7 @@ def detectar_anomalias_horarias(registros, factor=1.5):
 def detectar_bloqueos(registros):
     """Cuentas que fueron bloqueadas por demasiados intentos fallidos"""
     return sorted({r["usuario"] for r in registros if r.get("motivo") == "CUENTA_BLOQUEADA"})
- #Calcula la media y desviacion de los conteos
+    #Calcula la media y desviacion de los conteos
     valores = list(conteo.values())
     limite = statistics.mean(valores) + factor * statistics.pstdev(valores)
     #Decuelve las horas si el conteo supera el limite, ordenadas por fecha

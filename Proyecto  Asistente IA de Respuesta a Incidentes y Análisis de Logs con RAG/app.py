@@ -45,7 +45,7 @@ st.markdown("""
 .ia-header { 
     display:flex; align-items: center; gap: 14px;
      background-color: #131D2E; border: 1px solid #263345;
-     border-radius: 12px: padding: 14px 18px; margin-bottom: 12px;
+     border-radius: 12px; padding: 14px 18px; margin-bottom: 12px;
  }
  .ia-titulo {
  font-size: 1.2rem;
@@ -107,12 +107,12 @@ border: 1px solid rgba(50, 130, 246, 0.35);
 }
 .sesion-header {
 position: absolute;
-top: 18px
+top: 18px;
 right: 22px;
 text-align: right;
 background: rgba(19, 29, 46, 0.75);
 border: 1px solid #263345;
-border-radius: 12px
+border-radius: 12px;
 padding: 10px 14px;
 }
 .sesion-nombre {
@@ -151,7 +151,7 @@ border-radius: 14px; padding: 24px 26px;
 .login-titulo{ font-size: 1.6rem; font-weight: 700; color: #F1F6F9; }
 .login-texto { color: #94A3B8; margin-bottom: 12px; }
 [data-testid="stFormSubmitButton"] button {
-    background-color: #320652; !important; color: white; !important; border: none !important;font-weight: 600;
+    background-color: #320652 !important; color: white !important; border: none !important;font-weight: 600;
 }
 [data-testid="stFormSubmitButton"] button:hover { background-color: #2563EB !important; color: white !important; }
 .login-pie { text-align: center; color: #94A3B8; font-size: 0.8rem; margin-top: 10px; }
@@ -447,9 +447,9 @@ def cargar_datos():
     return logs_cvs, logs_fw, web, calcular_estadisticas(logs_cvs + logs_fw), calcular_estadisticas(web)
 
 @st.cache_data(ttl=60, show_spinner=False)
-def pdf_cacheado(resumen):
+def pdf_cacheado(resumen, detecciones, riesgos):
     """Genera el PDF solo cuando cambian los resultados del analisis"""
-    return generar_informe_pdf(resumen)
+    return generar_informe_pdf(resumen, detecciones, riesgos)
 # Motivos claros para mostrar en la app
 MOTIVOS = {
     "CLAVE_INCORRECTA": "Contraseña incorrecta",
@@ -460,6 +460,8 @@ MOTIVOS = {
 def tabla_eventos():
     """Junta Windows. firewall y servidor web en una sola tabla con las mismas columnas"""
     logs_cvs, logs_fw, web, _, _ = cargar_datos()
+    detecciones = lista_detecciones(resumen, est_web, web)
+    riesgos = niveles_de_riesgo(detecciones)
     filas = []
     for fuente, lista in (("Windows", logs_cvs), ("Firewall", logs_fw), ("Web", web)):
         for r in lista:
@@ -786,11 +788,11 @@ with tab_informes:
     st.subheader("Informe PDF del análisis")
     st.download_button(
         "Descargar informe (PDF)",
-        data=pdf_cacheado(resumen),
+        data=pdf_cacheado(resumen, detecciones, riesgos),
         file_name="Informe_logs.pdf",
         mime="application/pdf",
         on_click=registrar_informe,
-        args=(resumen,),
+        args=(resumen, detecciones, riesgos),
         icon=":material/picture_as_pdf:"
     )
    

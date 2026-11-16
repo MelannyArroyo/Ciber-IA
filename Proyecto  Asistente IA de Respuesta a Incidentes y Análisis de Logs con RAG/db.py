@@ -64,7 +64,7 @@ def crear_tablas(): #escribe en el lenguaje SQL, las cuatro tablas cada una es c
 
             CREATE TABLE IF NOT EXISTS accesos_web (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tiempo TEXT DEFAULT (datetime('now','locatime')),
+            tiempo TEXT DEFAULT (datetime('now','localtime')),
             usuario TEXT,
             correo_principal TEXT,
             ip TEXT,
