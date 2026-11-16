@@ -2,10 +2,13 @@ import os
 import chromadb
 from chromadb.utils import embedding_functions
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from Ingest_modulo1 import ingestar_logs, ingestar_firewall, a_esquema_rag, ruta_archivo, ruta_firewall
 import re
 import time
+import numpy as np #Aplana el vector para que sea una lista simple de numeros
+
 
 # 1. Cargar variables de entorno desde .env
 load_dotenv()
@@ -16,13 +19,14 @@ if not api_key:
 
 # 2. Inicializar cliente Gemini y cliente ChromaDB
 print(" Conectando con clientes de Gemini y ChromaDB...", flush=True)
-client = genai.Client(api_key=api_key)
+client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=30000))
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_or_create_collection(name="logs_seguridad")
 
 # Generador local de respaldo para embeddings (ONNX)
 fallback_embedding_fn = embedding_functions.DefaultEmbeddingFunction()
 MODELO_ACTIVO = None # Guarda el modelo que funcionó para no buscarlo en cada pregunta
+EMBEDDING_ACTIVO = None # Guarda la ruta de embeddings que funcionó
 
 def _texto_en_partes(primero, resto):
     """Entrega la respuesta de Gemini por partes, conforme va llegando"""
@@ -33,22 +37,15 @@ def _texto_en_partes(primero, resto):
 
 
 def obtener_embedding(texto: str) -> list[float]:
-    """Genera vector embedding con Gemini API o procesador local si falla."""
-    modelos_api = ["text-embedding-004", "embedding-001"]
-
-    for modelo in modelos_api:
-        try:
-            response = client.models.embed_content(model=modelo, contents=texto)
-            if hasattr(response, "embeddings") and response.embeddings:
-                return [float(x) for x in response.embeddings[0].values]
-            elif hasattr(response, "embedding") and response.embedding:
-                return [float(x) for x in response.embedding.values]
-        except Exception:
-            continue
-
-    # Fallback local garantizado
-    vector_local = fallback_embedding_fn([texto])[0]
-    return [float(x) for x in vector_local]
+   """Usa la misma ruta de embeddings siempre, para que guardar y buscar usen las mismas dimensiones"""
+   global EMBEDDING_ACTIVO
+   if EMBEDDING_ACTIVO is None:
+        EMBEDDING_ACTIVO = "onnx" #Ruta local, sin llamadas  de red
+   if EMBEDDING_ACTIVO == "onnx":
+       vector_local = np.asarray(fallback_embedding_fn([texto]) [0]).reshape(-1) # Aplana el arreglo a una sola dimension antes de convertirlo en lista
+       return [float(x) for x in vector_local]
+       
+   
 
 
 def agregar_logs_a_vectorstore(lista_de_logs: list[dict]) -> int:
@@ -89,13 +86,13 @@ def buscar_logs_relevantes(pregunta_usuario: str, top_k: int = 5) -> list[str]:
    
     docs_ip = []
     for ip in re.findall(r"\d{1,3}(?:\.\d{1,3}){3}", pregunta_usuario):
-        encontrados = collection.get(where={"src_ip": ip}, limit=20)
+        encontrados = collection.get(where={"src_ip": ip}, limit=5)
         docs_ip.extend(encontrados.get("documents", []))
     
 #Siempre incluye los fallos y bloqueos, que son los eventos de seguridad
     docs_alerta = []
     for estado in ("FAIL","DENY"):
-        encontrados = collection.get(where={"status": estado}, limit=30)
+        encontrados = collection.get(where={"status": estado}, limit=8)
         docs_alerta.extend(encontrados.get("documents", []))
         
     vector_pregunta = obtener_embedding(pregunta_usuario)
@@ -155,9 +152,13 @@ Si algo no aparece en los datos, dilo en lugar de inventarlo.
 
     # Modelos estándar de texto priorizados (sin prefijos)
     candidatos = [
+        "gemini-flash-lite-latest", 
         "gemini-3.8-flash",
-        
+         
+
     ]
+    if MODELO_ACTIVO:
+        candidatos = [MODELO_ACTIVO] + [m for m in candidatos if m != MODELO_ACTIVO]
 
     # Filtrar únicamente modelos válidos para texto desde la API
     if MODELO_ACTIVO is None: # Solo pide la lista de modelos la primera vez
@@ -183,7 +184,7 @@ Si algo no aparece en los datos, dilo en lugar de inventarlo.
             if stream:
                 partes = iter(client.models.generate_content_stream(model=modelo, contents=prompt))
                 primero = next(partes) # Si el modelo no sirve, el error de sale aquí y prueba el siguiente 
-                print(f" ⏱️ Primera parte de Gemini: {time.perf_counter() - Inicio:.f} s", flush=True)
+                print(f" ⏱️ Primera parte de Gemini: {time.perf_counter() - Inicio:.2f} s", flush=True)
                 MODELO_ACTIVO = modelo
                 return _texto_en_partes(primero, partes)
             
