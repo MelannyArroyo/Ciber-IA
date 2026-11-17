@@ -35,8 +35,8 @@ def enviar_correo(asunto, cuerpo):
     mensaje.set_content(cuerpo)
 
     try:
-        #se conecta con el servidor de gmail por el puerto 587
-        with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
+        #se conecta con el servidor de gmail por el puerto 587, sin limite el gmail no responde
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as servidor:
             servidor.starttls()
             servidor.login(REMITENTE, CLAVE)
             servidor.send_message(mensaje)
@@ -64,6 +64,25 @@ def enviar_alertas_pendientes():
             marcar_alerta_enviada(a["id"])
             enviadas += 1
     return enviadas
+TIPOS_LEGIBLES = {
+    "CONTRASENA_OLVIDADA": "Olvidó su contraseña",
+    "USUARIO_OLVIDADO": "Olvidó su usuario",
+    "CUENTA_BLOQUEADA": "Cuenta bloqueada",
+    "ERROR_APP": "Error en la app",
+    "OTRO": "Otro problema",
+}
+def avisar_nuevo_ticket(id_ticket, tipo, correo, descripcion):
+    """Avisa al administrador que llegó un ticket este no incluye contraseñas ni enlaces"""
+    nombre_tipo = TIPOS_LEGIBLES.get(tipo, tipo)
+    asunto = f"[TICKET #{id_ticket}] {nombre_tipo}"
+    cuerpo = (
+        f"Nuevo ticket de soporte #{id_ticket}\n"
+        f"Tipo: {nombre_tipo}\n"
+        f"Correo de contacto: {correo}\n"
+        f"Descripción: {descripcion}\n\n"
+        "Revisar el ticket en el sistema antes de desbloquear o cambiar culquier cuenta"
+    )
+    return enviar_correo(asunto, cuerpo)
 
 if __name__ == "__main__":
     ok = enviar_correo("Prueba SOC", "Correo de prueba del asistente de logs")

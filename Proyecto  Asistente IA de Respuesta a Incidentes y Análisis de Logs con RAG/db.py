@@ -75,6 +75,21 @@ def crear_tablas(): #escribe en el lenguaje SQL, las cuatro tablas cada una es c
             sistema TEXT DEFAULT 'WEB'
             );
 
+            CREATE TABLE IF NOT EXISTS tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            creado TEXT DEFAULT (datetime('now', 'localtime')),
+            actualizado TEXT,
+            tipo TEXT NOT NULL,
+            correo_contacto TEXT NOT NULL,
+            usuario TEXT,
+            ip TEXT,
+            descripcion TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'abierto',
+            respuesta TEXT
+            );
+
+        
+
         """)
         # Si la tabla ya existia, no le agrega columnas se agrega en esta funcion 
         columnas = [c["name"] for c in con.execute("PRAGMA table_info(accesos_web)")] # Devuelve la lista de columnas de una tabla
@@ -277,6 +292,53 @@ def fallos_recientes(usuario, minutos, sistema="WEB"):
             "AND tiempo >= datetime('now', 'localtime', ?)",
             (usuario, sistema, limite),
         ).fetchone()[0] #devuelve la fila con solo dato y lo saca
+TIPOS_TICKET = ("CONTRASENA_OLVIDADA", "USUARIO_OLVIDADO", "CUENTA_BLOQUEADA", "ERROR_APP", "OTRO")
+ESTADOS_TICKET = ("abierto", "en_proceso", "resuelto", "cerrado")
+MAX_TICKETS_x_HORA = 3
+
+def contar_tickets_recientes(ip, correo, horas=1):
+    """Cuenta los tickets de la misma IP o del mismo correo en la ultima hora"""
+    with conectar() as con:
+        return con.execute(
+            "SELECT COUNT(*) FROM tickets "
+            "WHERE (ip = ? OR correo_contacto = ?) AND creado >= datetime('now', 'localtime', ?)",
+            (ip, correo.strip().lower(), f"{horas} hours"),
+        ).fetchone() [0]
+
+def crear_ticket(tipo, correo_contacto, descripcion, ip, usuario=None):
+    """Guarda un ticket nuevo y limita la descripcion a 500 caracteres"""
+    if tipo not in TIPOS_TICKET:
+        raise ValueError("Tipo de ticket no válido")
+    descripcion = descripcion.strip()[:500]
+    with conectar() as con:
+        cur = con.execute(
+            "INSERT INTO tickets (tipo, correo_contacto, usuario, ip, descripcion) VALUES (?, ?, ?, ?, ?)",
+            (tipo, correo_contacto.strip().lower(), usuario, ip, descripcion),
+        )
+        return cur.lastrowid
+def listar_tickets(estado=None, limite=100):
+    """Listar tickets, los más recientes primero y filtra por estado si se indica"""
+    sql = "SELECT * FROM tickets WHERE 1=1"
+    params = []
+    if estado:
+        sql += "AND estado = ?"
+        params.append(estado)
+    sql += " ORDER BY creado DESC LIMIT ?"
+    params.append(limite)
+    with conectar () as con:
+        return [dict(f) for f in con.execute(sql, params).fetchall()]
+
+def actualizar_ticket(id_ticket, estado, respuesta=None):
+    """Cambia el estado del ticket y si se indica se guarda la respuesta al administrador"""
+    if estado not in ESTADOS_TICKET:
+        raise ValueError("Estado de ticket no válido")
+    with conectar() as con:
+        con.execute(
+            "UPDATE tickets SET estado = ?, respuesta =COALESCE(?, respuesta),"
+            "actualizado = datetime('now', 'localtime') WHERE id = ?",
+            (estado, respuesta, id_ticket),
+        )
+
 
     
 if __name__ == "__main__":

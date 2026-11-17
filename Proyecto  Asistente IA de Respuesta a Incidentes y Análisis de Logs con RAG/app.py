@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import os
 import time
 import html
 import base64
@@ -18,10 +19,23 @@ from Ingest_modulo1 import (
 )
 from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe, generar_pdf_reporte_ia
 from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
-from db import crear_tablas, listar_informes, obtener_informe, leer_accesos_web
-from notificaciones import enviar_alertas_pendientes, SEVERIDAD
+from db import (crear_tablas, listar_informes, obtener_informe, leer_accesos_web, 
+                crear_ticket, contar_tickets_recientes, MAX_TICKETS_x_HORA)
+from notificaciones import enviar_alertas_pendientes, SEVERIDAD, avisar_nuevo_ticket
 from pathlib import Path
 inicio_pagina = time.perf_counter() #cronometro de toda la pagina
+
+TIPOS_ACCESO = {
+    "Olividé mi contraseña": "CONTRASENA_OLVIDADA",
+    "Olvidé mi usuario": "USUARIO_OLVIDADO",
+    "Mi cuenta esta bloqueada": "CUENTA_BLOQUEADA",
+    "Otro problema": "OTRO"
+}
+CORREOS_PERMITIDOS = {
+    c.strip().lower()
+    for c in os.getenv("CORREOS_TICKET", "").split(",")
+    if c.strip()
+}
 
 @st.cache_data
 def imagen_base64(ruta):
@@ -382,9 +396,34 @@ if st.session_state.rol is None:
             usuario = st.text_input("Usuario", placeholder="Ingresa tu usuario")
             contrasena = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
             entrar = st.form_submit_button("Iniciar sesión", icon=":material/login:", key="iniciar_sesion")
-            st.markdown('<div class="login-pie">🔒 Acceso registrado y monitoreado<br>'
-                        '¿Problemas para entrar? Contacta al administrador</div>',
-                        unsafe_allow_html=True)
+        st.markdown('<div class="login-pie">🔒 Acceso registrado y monitoreado</div>',
+                    unsafe_allow_html=True)
+        if st.button("¿Problemas para entrar? Contacta al administrador",
+                        key="abrir_ticket", icon=":material/support_agent:"):
+            st.session_state.ticket_abierto = not st.session_state.get("ticket_abierto", False)
+
+        if st.session_state.get("ticket_abierto"):
+            with st.form("ticket_acceso", clear_on_submit=True):
+                tipo_etiqueta = st.selectbox("¿Qué pasó?", list(TIPOS_ACCESO.keys()))
+                correo_ticket = st.text_input("Correo de contacto")
+                descripcion_ticket = st.text_area("Describe el problema", max_chars=500)
+                enviar_ticket = st.form_submit_button("Enviar solicitud")
+            if enviar_ticket:
+                ip_ticket = getattr(st.context, "ip_address", None) or "LOCAL"
+                correo_limpio = correo_ticket.strip()
+                if "@" not  in correo_limpio or not descripcion_ticket.strip():
+                    st.warning("Escribe un correo válido y una descripción.")
+                else:
+                    if (correo_limpio in CORREOS_PERMITIDOS
+                        and contar_tickets_recientes(ip_ticket, correo_limpio) < MAX_TICKETS_x_HORA):
+                        id_nuevo = crear_ticket(TIPOS_ACCESO[tipo_etiqueta], correo_limpio,
+                                                descripcion_ticket, ip_ticket)
+                        avisar_nuevo_ticket(id_nuevo, TIPOS_ACCESO[tipo_etiqueta],
+                                            correo_limpio, descripcion_ticket.strip())
+                     
+                    #El mensaje es el mismo de siempre no revela informacion relevante
+                    st.success("Recibimos tu solicitud. El administrador te contactará por correo")
+                    
 
         if entrar:
             ip = getattr(st.context, "ip_address", None) or "LOCAL"
