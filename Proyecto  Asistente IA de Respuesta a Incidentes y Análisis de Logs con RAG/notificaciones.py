@@ -12,7 +12,7 @@ SEVERIDAD = {
 }
 from email.message import EmailMessage #Sirve para armar el correo
 from dotenv import load_dotenv
-from db import consultar_alertas, marcar_alerta_enviada
+from db import consultar_alertas, marcar_alerta_enviada, agregar_mensaje_ticket
 
 
 load_dotenv()
@@ -83,6 +83,21 @@ def avisar_nuevo_ticket(id_ticket, tipo, correo, descripcion):
         "Revisar el ticket en el sistema antes de desbloquear o cambiar culquier cuenta"
     )
     return enviar_correo(asunto, cuerpo)
+def enviar_respuesta_ticket(id_ticket, correo, respuesta):
+    """Envia al usuario la respuesta del administrador, este no incluye datos internos del sistema"""
+    asunto = f"Respuesta a tu solicitud #{id_ticket}"
+    cuerpo = (
+        f"Hola, \n\n"
+        f"Te respondemos sobre tu solicitud #{id_ticket}"
+        f"{respuesta}\n\n"
+        "Si el problema continúa, responde este correo o vuelve a enviar una solicitud desde el login."
+    )
+    return enviar_correo(asunto, cuerpo)
+def responder_ticket(ticket, admin, respuesta):
+    """Si el ticket tiene correo, responde por correo, si viene de la app responde en el chat del ticket"""
+    if ticket["correo_contacto"]:
+        return enviar_respuesta_ticket(ticket["id"], ticket["correo_contacto"], respuesta)
+    return agregar_mensaje_ticket(ticket["id"], admin, respuesta, es_admin=True)
 
 if __name__ == "__main__":
     ok = enviar_correo("Prueba SOC", "Correo de prueba del asistente de logs")

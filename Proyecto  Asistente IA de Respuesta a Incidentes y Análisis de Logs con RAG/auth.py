@@ -62,7 +62,7 @@ def verificar_usuario(nombre_usuario, contrasena, ip="LOCAL", agente=""):
 
     
 PERMISOS = {
-    "administrador": {"ver_panel", "usar_chat", "descargar_informe", "gestionar_usuarios"},
+    "administrador": {"ver_panel", "usar_chat", "descargar_informe", "gestionar_usuarios", "atender_tickets"},
     "analista": {"ver_panel", "usar_chat", "descargar_informe"},
 }
     

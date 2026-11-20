@@ -20,8 +20,9 @@ from Ingest_modulo1 import (
 from backend_logs import generar_informe_pdf, filtrar_eventos, registrar_informe, generar_pdf_reporte_ia
 from auth import verificar_usuario, tiene_permiso, registrar_usuario, listar_usuarios
 from db import (crear_tablas, listar_informes, obtener_informe, leer_accesos_web, 
-                crear_ticket, contar_tickets_recientes, MAX_TICKETS_x_HORA)
-from notificaciones import enviar_alertas_pendientes, SEVERIDAD, avisar_nuevo_ticket
+                crear_ticket, contar_tickets_recientes, MAX_TICKETS_x_HORA, listar_tickets,actualizar_ticket, ESTADOS_TICKET)
+from notificaciones import enviar_alertas_pendientes, SEVERIDAD, avisar_nuevo_ticket, responder_ticket, TIPOS_LEGIBLES
+from soporte_app import reporte_sidebar, mostrar_hilo
 from pathlib import Path
 inicio_pagina = time.perf_counter() #cronometro de toda la pagina
 
@@ -398,9 +399,11 @@ if st.session_state.rol is None:
             entrar = st.form_submit_button("Iniciar sesión", icon=":material/login:", key="iniciar_sesion")
         st.markdown('<div class="login-pie">🔒 Acceso registrado y monitoreado</div>',
                     unsafe_allow_html=True)
-        if st.button("¿Problemas para entrar? Contacta al administrador",
-                        key="abrir_ticket", icon=":material/support_agent:"):
-            st.session_state.ticket_abierto = not st.session_state.get("ticket_abierto", False)
+        _, c_boton,_ = st.columns([1, 2, 1])
+        with c_boton:
+            if st.button("¿Problemas para entrar? Contacta al administrador",
+                            key="abrir_ticket", icon=":material/support_agent:"):
+                st.session_state.ticket_abierto = not st.session_state.get("ticket_abierto", False)
 
         if st.session_state.get("ticket_abierto"):
             with st.form("ticket_acceso", clear_on_submit=True):
@@ -468,9 +471,45 @@ if tiene_permiso(st.session_state.rol, "gestionar_usuarios"):
                 f'<span class="rol-chip rol-{rol}">{rol.capitalize()}</span></div>',
                 unsafe_allow_html=True
             )
-                                   
 
+if tiene_permiso(st.session_state.rol, "atender_tickets"):
+        with st.sidebar.expander("Tickets de soporte", icon=":material/support_agent:"):
+            filtro_estado = st.selectbox("Filtrar por estado", ["todos"] + list(ESTADOS_TICKET),
+                                     key="filtro_tickets")
+            tickets = listar_tickets(None if filtro_estado == "todos" else filtro_estado)
+            if not tickets:
+                st.info("No hay tickets con ese estado")
+            else:
+                opciones = {
+                    f"#{t['id']} · {TIPOS_LEGIBLES.get(t['tipo'], t['tipo'])} · {t['estado']}": t
+                    for t in tickets
+                }
+                elegido = st.selectbox("Ticket", list(opciones), key="ticket_elegido")
+                t = opciones[elegido]
+                st.caption(f"Creado: {t['creado']}")
+                if t["correo_contacto"]:
+                    st.caption(f"Correo: {t['correo_contacto']}")
+                if t['usuario'] and not t["correo_contacto"]:
+                    st.caption(f"Usuario de la app: {t['usuario']}")
+                    mostrar_hilo(t)
+                else:
+                    st.write(html.escape(t["descripcion"]))
+                    if t["respuesta"]:
+                        st.write(f"**Respuesta enviada:** {html.escape(t['respuesta'])}")
+               
+                nuevo_estado = st.selectbox("Estado", ESTADOS_TICKET,
+                                            index=ESTADOS_TICKET.index(t["estado"]),
+                                            key=f"estado_{t['id']}")
+                respuesta = st.text_area("Respuesta para el usuario",
+                                         key=f"resp_{t['id']}", max_chars=1000)
+                if st.button("Guardar y enviar", key=f"guardar_{t['id']}"):
+                    if respuesta.strip():
+                        responder_ticket(t, st.session_state.usuario, respuesta.strip())
+                    actualizar_ticket(t["id"], nuevo_estado, respuesta.strip() or None)
+                    st.success("Ticket actualizado")
+                    st.rerun()
 # Barra lateral
+reporte_sidebar(st.session_state.usuario)
 with st.sidebar:
     if st.button("Cerrar sesión",icon=":material/logout:", key="cerrar_sesion"): 
         st.session_state.clear()

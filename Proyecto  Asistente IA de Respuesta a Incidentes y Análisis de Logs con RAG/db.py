@@ -87,6 +87,14 @@ def crear_tablas(): #escribe en el lenguaje SQL, las cuatro tablas cada una es c
             estado TEXT NOT NULL DEFAULT 'abierto',
             respuesta TEXT
             );
+            CREATE TABLE IF NOT EXISTS mensajes_ticket (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_ticket INTEGER NOT NULL,
+            autor TEXT NOT NULL,
+            es_admin INTEGER NOT NULL DEFAULT 0,
+            mensaje TEXT NOT NULL,
+            creado TEXT DEFAULT (datetime('now', 'localtime'))
+            );
 
         
 
@@ -302,7 +310,7 @@ def contar_tickets_recientes(ip, correo, horas=1):
         return con.execute(
             "SELECT COUNT(*) FROM tickets "
             "WHERE (ip = ? OR correo_contacto = ?) AND creado >= datetime('now', 'localtime', ?)",
-            (ip, correo.strip().lower(), f"{horas} hours"),
+            (ip, correo.strip().lower(), f"-{horas} hours"),
         ).fetchone() [0]
 
 def crear_ticket(tipo, correo_contacto, descripcion, ip, usuario=None):
@@ -318,10 +326,10 @@ def crear_ticket(tipo, correo_contacto, descripcion, ip, usuario=None):
         return cur.lastrowid
 def listar_tickets(estado=None, limite=100):
     """Listar tickets, los más recientes primero y filtra por estado si se indica"""
-    sql = "SELECT * FROM tickets WHERE 1=1"
+    sql = " SELECT * FROM tickets WHERE 1=1"
     params = []
     if estado:
-        sql += "AND estado = ?"
+        sql += " AND estado = ?"
         params.append(estado)
     sql += " ORDER BY creado DESC LIMIT ?"
     params.append(limite)
@@ -338,8 +346,57 @@ def actualizar_ticket(id_ticket, estado, respuesta=None):
             "actualizado = datetime('now', 'localtime') WHERE id = ?",
             (estado, respuesta, id_ticket),
         )
+# Rportes desde la app 
+MAX_REPORTES_APP_X_HORA = 5
+MAX_MENSAJES_CHAT = 500
 
+def contar_tickets_usuario(usuario, horas=1):
+    """Cuenta los tickets que ese usuario creo en la ultima hora"""
+    with conectar() as con:
+        return con.execute(
+            "SELECT COUNT(*) FROM tickets WHERE usuario = ? "
+            "AND creado >= datetime('now', 'localtime', ?)",
+            (usuario, f"-{horas} hours")
+        ).fetchone()[0]
+def crear_ticket_app(usuario, descripcion, ip):
+    """Crea un ticket si hay un error ligado en la cuenta sin correo el contacto es el chat"""
+    return crear_ticket("ERROR_APP","", descripcion, ip, usuario=usuario)
 
+def listar_tickets_usuario(usuario, limite=20):
+    """Solo los tickets de ese usuario y el más reciente primero"""
+    with conectar() as con:
+        filas = con.execute(
+           "SELECT * FROM tickets WHERE usuario = ? ORDER BY creado DESC, id DESC LIMIT ?",
+           (usuario, limite),
+        ).fetchall()
+    return [dict(f) for f in filas]
+
+def listar_mensajes_ticket(id_ticket):
+    """Mensajes del chat de un ticket, del mas antiguo al mas nuevo"""
+    with conectar() as con:
+        filas = con.execute(
+            "SELECT * FROM mensajes_ticket WHERE id_ticket = ? ORDER BY id",
+            (id_ticket,),
+        ).fetchall()
+    return [dict(f) for f in filas]
+
+def agregar_mensaje_ticket(id_ticket, autor, mensaje, es_admin=False):
+    """Guarda un mensaje del chat. Si lo escribe un usuario, el ticket debe ser suyo y estar abierto. Devuelve true si se guardo"""
+    mensaje = (mensaje or "").strip() [:MAX_MENSAJES_CHAT]
+    if not mensaje:
+        return False
+    with conectar() as con:
+        ticket = con.execute("SELECT usuario, estado FROM tickets WHERE id = ?", (id_ticket,)).fetchone()
+        if ticket is None:
+            return False
+        if not es_admin and (ticket["usuario"] != autor or ticket["estado"] == "cerrado"):
+            return False
+        con.execute(
+            "INSERT INTO mensajes_ticket (id_ticket, autor, es_admin, mensaje) VALUES (?, ?, ?, ?)",
+            (id_ticket, autor, 1 if es_admin else 0, mensaje),
+        )
+        con.execute("UPDATE tickets SET actualizado = datetime('now', 'localtime') WHERE id = ?", (id_ticket,))
+    return True
     
 if __name__ == "__main__":
     crear_tablas()
